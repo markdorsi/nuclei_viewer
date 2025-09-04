@@ -1,18 +1,24 @@
 [build]
-  publish = "public"
-  command = ""
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = "dist"
 
-[context.deploy-preview]
-  command = ""
+[dev]
+  command = "npm run dev:ui"
+  targetPort = 5173
+  functionsPort = 9999
   
-[context.branch-deploy]
-  command = ""
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
 
-# Automatic deploy previews for all branches and PRs
-[build.processing]
-  skip_processing = false
+# Handle auth callback
+[[redirects]]
+  from = "/auth/callback"
+  to = "/.netlify/functions/auth-callback"
+  status = 200
 
-# SPA redirect for single page applications
 [[redirects]]
   from = "/*"
   to = "/index.html"
