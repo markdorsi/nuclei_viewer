@@ -102,7 +102,22 @@ export const findings = nucleiDb.table('findings', {
   firstSeen: timestamp('first_seen').defaultNow().notNull(),
   lastSeen: timestamp('last_seen').defaultNow().notNull(),
   resolved: boolean('resolved').default(false),
-  resolvedAt: timestamp('resolved_at')
+  resolvedAt: timestamp('resolved_at'),
+  // Remediation Lifecycle Timestamps
+  detectedAt: timestamp('detected_at').defaultNow().notNull(),
+  triagedAt: timestamp('triaged_at'),
+  prioritizedAt: timestamp('prioritized_at'),
+  remediatedAt: timestamp('remediated_at'),
+  validatedAt: timestamp('validated_at'),
+  closedAt: timestamp('closed_at'),
+  // SLA Configuration and Tracking
+  slaTargetDays: integer('sla_target_days'), // Based on severity: critical=7, high=30, medium=60, low=120
+  slaDueDate: timestamp('sla_due_date'),
+  slaStatus: text('sla_status', { enum: ['within', 'at_risk', 'breached'] }).default('within'),
+  // Status tracking
+  currentStatus: text('current_status', { 
+    enum: ['detected', 'triaged', 'prioritized', 'assigned', 'in_progress', 'remediated', 'validated', 'closed'] 
+  }).default('detected')
 }, (table) => ({
   unique: unique().on(table.tenantId, table.companyId, table.dedupeKey),
   tenantIdx: index().on(table.tenantId),

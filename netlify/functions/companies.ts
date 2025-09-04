@@ -2,9 +2,33 @@ import type { Handler } from '@netlify/functions'
 import { db, companies, tenants, findings, scans } from '../../db'
 import { eq, and, sql } from 'drizzle-orm'
 
+// Helper function to extract tenant from query params or path
+function extractTenantSlug(event: any): string | null {
+  // Try query parameter first (from redirect rule)
+  let tenantSlug = event.queryStringParameters?.tenant
+  
+  // If no query parameter, try extracting from path
+  if (!tenantSlug && event.path.includes('/t/')) {
+    const pathParts = event.path.split('/')
+    const tIndex = pathParts.findIndex((part: string) => part === 't')
+    if (tIndex !== -1 && pathParts[tIndex + 1]) {
+      tenantSlug = pathParts[tIndex + 1]
+    }
+  }
+  
+  return tenantSlug
+}
+
 export const handler: Handler = async (event, context) => {
-  const pathParts = event.path.split('/')
-  const tenantSlug = pathParts[3] // /api/t/{tenant}/companies
+  // Get tenant from query parameter (set by redirect rule) or path
+  const tenantSlug = extractTenantSlug(event)
+  
+  if (!tenantSlug) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Tenant parameter missing' })
+    }
+  }
   
   // Get tenant
   const [tenant] = await db

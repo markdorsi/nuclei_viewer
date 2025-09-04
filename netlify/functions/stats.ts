@@ -3,12 +3,38 @@ import { db, findings, companies, scans, assets, tenants } from '../../db'
 import { eq, and, sql } from 'drizzle-orm'
 
 export const handler: Handler = async (event, context) => {
+  console.log('Stats function called with path:', event.path)
+  console.log('Query parameters:', event.queryStringParameters)
+  console.log('Full event object:', JSON.stringify(event, null, 2))
+  
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: 'Method Not Allowed' }
   }
 
-  const pathParts = event.path.split('/')
-  const tenantSlug = pathParts[3] // /api/t/{tenant}/stats
+  // Try to get tenant from query parameter first, then fall back to path parsing
+  let tenantSlug = event.queryStringParameters?.tenant
+  
+  // If no query parameter, try extracting from path
+  if (!tenantSlug) {
+    // Check if this is a direct call to the function with tenant in path
+    if (event.path.includes('/t/')) {
+      const pathParts = event.path.split('/')
+      const tIndex = pathParts.findIndex(part => part === 't')
+      if (tIndex !== -1 && pathParts[tIndex + 1]) {
+        tenantSlug = pathParts[tIndex + 1]
+        console.log('Extracted tenant from path:', tenantSlug)
+      }
+    }
+  }
+  
+  console.log('Final tenant slug:', tenantSlug)
+  
+  if (!tenantSlug) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Tenant parameter missing', debug: { path: event.path, query: event.queryStringParameters } })
+    }
+  }
   
   // Get tenant
   const [tenant] = await db

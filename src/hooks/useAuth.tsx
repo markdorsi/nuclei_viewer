@@ -41,23 +41,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' })
-      if (res.ok) {
-        const data = await res.json()
-        setUser(data.user)
-        setTenant(data.tenant)
-        setTenants(data.tenants || [])
-      } else if (res.status === 401) {
-        // User not authenticated - clear state
+      const token = localStorage.getItem('authToken')
+      if (!token) {
+        // No token found
         setUser(null)
         setTenant(null)
         setTenants([])
-      } else {
-        throw new Error(`Auth check failed: ${res.status}`)
+        setLoading(false)
+        return
+      }
+
+      // Decode JWT token to get user info (basic decode, not verification)
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]))
+        
+        // Check if token is expired
+        if (payload.exp && payload.exp < Date.now() / 1000) {
+          localStorage.removeItem('authToken')
+          setUser(null)
+          setTenant(null)
+          setTenants([])
+          setLoading(false)
+          return
+        }
+
+        // Set user from token payload
+        setUser({
+          id: payload.userId || payload.sub,
+          email: payload.email,
+          name: payload.name,
+          avatar: payload.picture,
+          tenantId: payload.tenantId,
+        })
+
+        // Set tenant from token payload
+        setTenant({
+          id: payload.tenantId,
+          name: payload.domain ? payload.domain.split('.')[0].toUpperCase() + ' Organization' : 'Default Tenant',
+          slug: payload.tenantSlug || payload.domain?.split('.')[0] || 'default'
+        })
+        
+        setTenants([{
+          id: payload.tenantId,
+          name: payload.domain ? payload.domain.split('.')[0].toUpperCase() + ' Organization' : 'Default Tenant',
+          slug: payload.tenantSlug || payload.domain?.split('.')[0] || 'default'
+        }])
+        
+      } catch (decodeError) {
+        console.error('Failed to decode token:', decodeError)
+        localStorage.removeItem('authToken')
+        setUser(null)
+        setTenant(null)
+        setTenants([])
       }
     } catch (error) {
       console.error('Auth check failed:', error)
-      // On error, clear auth state
       setUser(null)
       setTenant(null)
       setTenants([])
@@ -67,12 +105,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const login = () => {
-    window.location.href = '/api/auth/login'
+    window.location.href = '/login.html'
   }
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+      // Remove token from localStorage
+      localStorage.removeItem('authToken')
       setUser(null)
       setTenant(null)
       setTenants([])

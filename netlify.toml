@@ -9,8 +9,8 @@
   functionsPort = 9999
   
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
+  from = "/api/t/:tenant/:function"
+  to = "/.netlify/functions/:function?tenant=:tenant"
   status = 200
 
 # Handle auth callback

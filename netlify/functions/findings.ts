@@ -2,13 +2,64 @@ import type { Handler } from '@netlify/functions'
 import { db, findings, tenants, companies, externalIssues } from '../../db'
 import { eq, and, sql } from 'drizzle-orm'
 
+// SLA configuration based on severity
+const SLA_DAYS = {
+  critical: 7,
+  high: 30,
+  medium: 60,
+  low: 120
+} as const
+
+function calculateSLADueDate(severity: string, detectedAt: Date): Date {
+  const slaTargetDays = SLA_DAYS[severity as keyof typeof SLA_DAYS] || SLA_DAYS.low
+  const dueDate = new Date(detectedAt)
+  dueDate.setDate(dueDate.getDate() + slaTargetDays)
+  return dueDate
+}
+
+function calculateSLAStatus(severity: string, detectedAt: Date, currentStatus: string): string {
+  if (currentStatus === 'closed') return 'within'
+  
+  const dueDate = calculateSLADueDate(severity, detectedAt)
+  const now = new Date()
+  const daysRemaining = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  
+  if (daysRemaining < 0) return 'breached'
+  if (daysRemaining <= 2) return 'at_risk'
+  return 'within'
+}
+
+// Helper function to extract tenant from query params or path
+function extractTenantSlug(event: any): string | null {
+  // Try query parameter first (from redirect rule)
+  let tenantSlug = event.queryStringParameters?.tenant
+  
+  // If no query parameter, try extracting from path
+  if (!tenantSlug && event.path.includes('/t/')) {
+    const pathParts = event.path.split('/')
+    const tIndex = pathParts.findIndex((part: string) => part === 't')
+    if (tIndex !== -1 && pathParts[tIndex + 1]) {
+      tenantSlug = pathParts[tIndex + 1]
+    }
+  }
+  
+  return tenantSlug
+}
+
 export const handler: Handler = async (event, context) => {
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: 'Method Not Allowed' }
   }
 
-  const pathParts = event.path.split('/')
-  const tenantSlug = pathParts[3] // /api/t/{tenant}/findings
+  // Get tenant from query parameter (set by redirect rule) or path
+  const tenantSlug = extractTenantSlug(event)
+  
+  if (!tenantSlug) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Tenant parameter missing' })
+    }
+  }
   
   // Get tenant
   const [tenant] = await db

@@ -1,4 +1,4 @@
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   // Use environment variable or fallback to site URL
   const siteUrl = process.env.SITE_URL || process.env.URL || '{{SITE_URL}}';
   

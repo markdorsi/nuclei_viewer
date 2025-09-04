@@ -1,6 +1,8 @@
-const jwt = require('jsonwebtoken');
+import jwt from 'jsonwebtoken';
+import { db, tenants, users, memberships } from '../../db/index.js';
+import { eq, and } from 'drizzle-orm';
 
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   console.log('=== GOOGLE SSO CALLBACK ===');
   
   const code = event.queryStringParameters?.code;
@@ -71,15 +73,91 @@ exports.handler = async (event, context) => {
       };
     }
 
+    // Create or find tenant based on domain
+    console.log('Finding or creating tenant for domain:', domain);
+    let [tenant] = await db
+      .select()
+      .from(tenants)
+      .where(eq(tenants.googleDomain, domain))
+      .limit(1);
+    
+    if (!tenant) {
+      console.log('Creating new tenant for domain:', domain);
+      [tenant] = await db
+        .insert(tenants)
+        .values({
+          name: domain.split('.')[0].toUpperCase() + ' Organization',
+          slug: domain.split('.')[0].toLowerCase(),
+          googleDomain: domain
+        })
+        .returning();
+    }
+
+    // Create or update user
+    console.log('Finding or creating user:', googleUser.email);
+    let [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.googleId, googleUser.id))
+      .limit(1);
+    
+    if (!user) {
+      console.log('Creating new user:', googleUser.email);
+      [user] = await db
+        .insert(users)
+        .values({
+          googleId: googleUser.id,
+          email: googleUser.email,
+          name: googleUser.name,
+          avatar: googleUser.picture
+        })
+        .returning();
+    } else {
+      // Update user info
+      [user] = await db
+        .update(users)
+        .set({
+          name: googleUser.name,
+          avatar: googleUser.picture,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id))
+        .returning();
+    }
+
+    // Create membership if it doesn't exist
+    const [membership] = await db
+      .select()
+      .from(memberships)
+      .where(and(
+        eq(memberships.tenantId, tenant.id),
+        eq(memberships.userId, user.id)
+      ))
+      .limit(1);
+    
+    if (!membership) {
+      console.log('Creating membership for user in tenant');
+      await db
+        .insert(memberships)
+        .values({
+          tenantId: tenant.id,
+          userId: user.id,
+          role: 'analyst' // Default role for domain users
+        });
+    }
+
     // Generate JWT token
     console.log('Generating JWT token...');
     const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key';
     const token = jwt.sign({
-      userId: googleUser.id,
+      userId: user.id,
+      googleId: googleUser.id,
       email: googleUser.email,
       name: googleUser.name,
       picture: googleUser.picture,
       domain: domain,
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
       loginTime: new Date().toISOString()
     }, jwtSecret, { expiresIn: '24h' });
     
