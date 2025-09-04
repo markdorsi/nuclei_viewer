@@ -1,0 +1,7 @@
+{
+  "completedSteps": [
+    "dependencies",
+    "github_auth",
+    "git_init"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "nuclei_viewer",
+  "version": "0.1.0",
+  "description": "Bootstrapped with naxp",
+  "scripts": {
+    "dev": "echo 'Add your dev script here'",
+    "build": "echo 'Add your build script here'",
+    "test": "echo 'Add your test script here'"
+  }
+}
