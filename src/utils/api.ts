@@ -3,22 +3,29 @@ export const apiCall = async (url: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('authToken')
   
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
     ...options.headers,
+  }
+  
+  // Only set Content-Type if not FormData (let browser set it for FormData)
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json'
   }
   
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }
   
-  console.log('API call:', url, 'with token:', !!token)
+  console.log('🔵 API call:', url, 'with token:', !!token)
+  console.log('🔵 Request headers:', headers)
+  console.log('🔵 Request options:', options)
   
   const response = await fetch(url, {
     ...options,
     headers,
   })
   
-  console.log('API response:', response.status, response.statusText)
+  console.log('🟢 API response:', response.status, response.statusText)
+  console.log('🟢 Response headers:', Object.fromEntries(response.headers.entries()))
   
   if (!response.ok) {
     const errorText = await response.text()
@@ -27,10 +34,16 @@ export const apiCall = async (url: string, options: RequestInit = {}) => {
   }
   
   const contentType = response.headers.get('content-type')
+  console.log('🟢 Content-Type:', contentType)
+  
   if (contentType && contentType.includes('application/json')) {
-    return response.json()
+    const data = await response.json()
+    console.log('🟢 JSON Response data:', data)
+    return data
   }
   
+  const textData = await response.text()
+  console.log('🟢 Text Response data:', textData)
   return response
 }
 

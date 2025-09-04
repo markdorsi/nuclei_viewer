@@ -3,9 +3,6 @@ import { db, findings, companies, scans, assets, tenants } from '../../db'
 import { eq, and, sql } from 'drizzle-orm'
 
 export const handler: Handler = async (event, context) => {
-  console.log('Stats function called with path:', event.path)
-  console.log('Query parameters:', event.queryStringParameters)
-  console.log('Full event object:', JSON.stringify(event, null, 2))
   
   if (event.httpMethod !== 'GET') {
     return { statusCode: 405, body: 'Method Not Allowed' }
@@ -22,12 +19,9 @@ export const handler: Handler = async (event, context) => {
       const tIndex = pathParts.findIndex(part => part === 't')
       if (tIndex !== -1 && pathParts[tIndex + 1]) {
         tenantSlug = pathParts[tIndex + 1]
-        console.log('Extracted tenant from path:', tenantSlug)
       }
     }
   }
-  
-  console.log('Final tenant slug:', tenantSlug)
   
   if (!tenantSlug) {
     return {

@@ -41,9 +41,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
+      console.log('🟡 AUTH: Checking authentication...')
       const token = localStorage.getItem('authToken')
+      console.log('🟡 AUTH: Token found:', !!token)
+      
       if (!token) {
         // No token found
+        console.log('🟡 AUTH: No token, clearing auth state')
         setUser(null)
         setTenant(null)
         setTenants([])
@@ -54,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Decode JWT token to get user info (basic decode, not verification)
       try {
         const payload = JSON.parse(atob(token.split('.')[1]))
+        console.log('🟡 AUTH: Token payload:', payload)
         
         // Check if token is expired
         if (payload.exp && payload.exp < Date.now() / 1000) {
@@ -75,17 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })
 
         // Set tenant from token payload
-        setTenant({
+        const tenantData = {
           id: payload.tenantId,
           name: payload.domain ? payload.domain.split('.')[0].toUpperCase() + ' Organization' : 'Default Tenant',
           slug: payload.tenantSlug || payload.domain?.split('.')[0] || 'default'
-        })
+        }
         
-        setTenants([{
-          id: payload.tenantId,
-          name: payload.domain ? payload.domain.split('.')[0].toUpperCase() + ' Organization' : 'Default Tenant',
-          slug: payload.tenantSlug || payload.domain?.split('.')[0] || 'default'
-        }])
+        console.log('🟡 AUTH: Setting tenant:', tenantData)
+        setTenant(tenantData)
+        
+        console.log('🟡 AUTH: Setting tenants array:', [tenantData])
+        setTenants([tenantData])
         
       } catch (decodeError) {
         console.error('Failed to decode token:', decodeError)

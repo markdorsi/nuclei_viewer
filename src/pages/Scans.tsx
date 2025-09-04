@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
 import { CloudArrowUpIcon } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
+import { apiCall } from '../utils/api'
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -16,59 +17,113 @@ export default function Scans() {
   const queryClient = useQueryClient()
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedCompany, setSelectedCompany] = useState<string>('')
+  const [fileInputKey, setFileInputKey] = useState<number>(0)
+  const [uploadMessage, setUploadMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  const { data: scans, isLoading } = useQuery({
+  const { data: scans, isLoading, error: scansError } = useQuery({
     queryKey: ['scans', tenant?.id],
     queryFn: async () => {
-      const res = await fetch(`/api/t/${tenant?.slug}/scans`)
-      if (!res.ok) throw new Error('Failed to fetch scans')
-      return res.json()
+      console.log('🔴 SCANS QUERY: Starting for tenant:', tenant?.slug)
+      const result = await apiCall(`/api/t/${tenant?.slug}/scans`)
+      console.log('🔴 SCANS QUERY: Result:', result)
+      return result
     },
     enabled: !!tenant
   })
 
-  const { data: companies } = useQuery({
+  const { data: companies, error: companiesError } = useQuery({
     queryKey: ['companies', tenant?.id],
     queryFn: async () => {
-      const res = await fetch(`/api/t/${tenant?.slug}/companies`)
-      if (!res.ok) throw new Error('Failed to fetch companies')
-      return res.json()
+      console.log('🔴 COMPANIES QUERY: Starting for tenant:', tenant?.slug)
+      const result = await apiCall(`/api/t/${tenant?.slug}/companies`)
+      console.log('🔴 COMPANIES QUERY: Result:', result)
+      return result
     },
     enabled: !!tenant
   })
 
   const uploadScan = useMutation({
-    mutationFn: async ({ file, companyId }: { file: File; companyId: string }) => {
+    mutationFn: async ({ file, companyId }: { file: File; companyId?: string }) => {
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('companyId', companyId)
+      if (companyId) {
+        formData.append('companyId', companyId)
+      }
       
-      const res = await fetch(`/api/t/${tenant?.slug}/upload`, {
+      return apiCall(`/api/t/${tenant?.slug}/upload`, {
         method: 'POST',
         body: formData
       })
-      if (!res.ok) throw new Error('Failed to upload scan')
-      return res.json()
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['scans', tenant?.id] })
+      // Reset form state
       setSelectedFile(null)
       setSelectedCompany('')
+      // Force file input reset by changing key
+      setFileInputKey(prev => prev + 1)
+      // Show success message
+      setUploadMessage({ 
+        type: 'success', 
+        text: `File uploaded successfully! (${data.fileSize} bytes)` 
+      })
+      // Clear message after 5 seconds
+      setTimeout(() => setUploadMessage(null), 5000)
+    },
+    onError: (error: Error) => {
+      setUploadMessage({ 
+        type: 'error', 
+        text: `Upload failed: ${error.message}` 
+      })
+      // Clear error message after 5 seconds
+      setTimeout(() => setUploadMessage(null), 5000)
     }
   })
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('🔴 FILE SELECT: Event triggered')
     const file = e.target.files?.[0]
+    console.log('🔴 FILE SELECT: Selected file:', file)
     if (file) {
       setSelectedFile(file)
+      console.log('🔴 FILE SELECT: File set in state:', file.name, file.size)
     }
   }
 
   const handleUpload = () => {
-    if (selectedFile && selectedCompany) {
-      uploadScan.mutate({ file: selectedFile, companyId: selectedCompany })
+    console.log('🔴 UPLOAD: Button clicked')
+    console.log('🔴 UPLOAD: Selected file:', selectedFile)
+    console.log('🔴 UPLOAD: Selected company:', selectedCompany)
+    console.log('🔴 UPLOAD: Companies available:', companies?.length || 0)
+    console.log('🔴 UPLOAD: Can upload?', !!selectedFile)
+    
+    if (selectedFile) {
+      console.log('🔴 UPLOAD: Starting upload mutation...')
+      // If companies exist but none selected, require selection
+      // If no companies exist, allow upload (server will create from filename)
+      if (companies && companies.length > 0 && !selectedCompany) {
+        console.log('🔴 UPLOAD: Upload blocked - company required when companies exist')
+        return
+      }
+      
+      uploadScan.mutate({ 
+        file: selectedFile, 
+        companyId: selectedCompany || undefined 
+      })
+    } else {
+      console.log('🔴 UPLOAD: Upload blocked - missing file')
     }
   }
+
+  // Debug logging for render
+  console.log('🔴 RENDER: tenant:', tenant)
+  console.log('🔴 RENDER: scans data:', scans)
+  console.log('🔴 RENDER: companies data:', companies)
+  console.log('🔴 RENDER: selectedFile:', selectedFile)
+  console.log('🔴 RENDER: selectedCompany:', selectedCompany)
+  console.log('🔴 RENDER: isLoading:', isLoading)
+  console.log('🔴 RENDER: scansError:', scansError)
+  console.log('🔴 RENDER: companiesError:', companiesError)
 
   return (
     <div>
@@ -82,15 +137,20 @@ export default function Scans() {
           <div className="mt-4 space-y-4">
             <div>
               <label htmlFor="company" className="block text-sm font-medium text-gray-700">
-                Select Company
+                Select Company {companies && companies.length === 0 && <span className="text-gray-500">(Optional - will create from filename)</span>}
               </label>
               <select
                 id="company"
                 value={selectedCompany}
                 onChange={(e) => setSelectedCompany(e.target.value)}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                disabled={!companies || companies.length === 0}
               >
-                <option value="">Choose a company...</option>
+                <option value="">
+                  {!companies || companies.length === 0 
+                    ? 'No companies yet - will create from filename' 
+                    : 'Choose a company...'}
+                </option>
                 {companies?.map((company: any) => (
                   <option key={company.id} value={company.id}>
                     {company.name}
@@ -105,6 +165,7 @@ export default function Scans() {
               </label>
               <div className="mt-1 flex items-center">
                 <input
+                  key={fileInputKey}
                   type="file"
                   id="file"
                   accept=".jsonl,.json,.xml,.txt"
@@ -121,12 +182,25 @@ export default function Scans() {
 
             <button
               onClick={handleUpload}
-              disabled={!selectedFile || !selectedCompany || uploadScan.isPending}
+              disabled={
+                !selectedFile || 
+                uploadScan.isPending ||
+                (companies && companies.length > 0 && !selectedCompany)
+              }
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
             >
               <CloudArrowUpIcon className="-ml-1 mr-2 h-5 w-5" />
               {uploadScan.isPending ? 'Uploading...' : 'Upload Scan'}
             </button>
+            
+            {uploadMessage && (
+              <div className={clsx(
+                'mt-3 p-3 rounded-md text-sm',
+                uploadMessage.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+              )}>
+                {uploadMessage.text}
+              </div>
+            )}
           </div>
         </div>
       </div>
