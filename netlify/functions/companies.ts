@@ -115,5 +115,77 @@ export const handler: Handler = async (event, context) => {
     }
   }
 
+  if (event.httpMethod === 'DELETE') {
+    try {
+      // Extract company ID from path or query params
+      const companyId = event.queryStringParameters?.id
+      
+      if (!companyId) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: 'Company ID required' })
+        }
+      }
+
+      // First verify the company exists and belongs to this tenant
+      const existingCompany = await db
+        .select()
+        .from(companies)
+        .where(and(
+          eq(companies.id, companyId),
+          eq(companies.tenantId, tenant.id)
+        ))
+        .limit(1)
+
+      if (!existingCompany.length) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ error: 'Company not found' })
+        }
+      }
+
+      // Check if company has any scans or findings
+      const companyScans = await db
+        .select()
+        .from(scans)
+        .where(eq(scans.companyId, companyId))
+        .limit(1)
+
+      if (companyScans.length > 0) {
+        return {
+          statusCode: 409,
+          body: JSON.stringify({ 
+            error: 'Cannot delete company with existing scans. Delete scans first.' 
+          })
+        }
+      }
+
+      // Delete the company
+      await db
+        .delete(companies)
+        .where(and(
+          eq(companies.id, companyId),
+          eq(companies.tenantId, tenant.id)
+        ))
+
+      console.log(`🗑️ COMPANY DELETE: Deleted company ${companyId} (${existingCompany[0].name}) for tenant ${tenantSlug}`)
+
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: 'Company deleted successfully',
+          deletedCompany: existingCompany[0]
+        })
+      }
+    } catch (error: any) {
+      console.error('Failed to delete company:', error)
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Failed to delete company' })
+      }
+    }
+  }
+
   return { statusCode: 405, body: 'Method Not Allowed' }
 }

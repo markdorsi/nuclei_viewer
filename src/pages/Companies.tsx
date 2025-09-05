@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
-import { PlusIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { apiCall } from '../utils/api'
 
 export default function Companies() {
   const { tenant } = useAuth()
@@ -13,28 +14,34 @@ export default function Companies() {
   const { data: companies, isLoading } = useQuery({
     queryKey: ['companies', tenant?.id],
     queryFn: async () => {
-      const res = await fetch(`/api/t/${tenant?.slug}/companies`)
-      if (!res.ok) throw new Error('Failed to fetch companies')
-      return res.json()
+      return apiCall(`/api/t/${tenant?.slug}/companies`)
     },
     enabled: !!tenant
   })
 
   const createCompany = useMutation({
     mutationFn: async (data: { name: string; slug: string }) => {
-      const res = await fetch(`/api/t/${tenant?.slug}/companies`, {
+      return apiCall(`/api/t/${tenant?.slug}/companies`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       })
-      if (!res.ok) throw new Error('Failed to create company')
-      return res.json()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['companies', tenant?.id] })
       setIsAddingCompany(false)
       setNewCompanyName('')
       setNewCompanySlug('')
+    }
+  })
+
+  const deleteCompany = useMutation({
+    mutationFn: async (companyId: string) => {
+      return apiCall(`/api/t/${tenant?.slug}/companies?id=${companyId}`, {
+        method: 'DELETE'
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies', tenant?.id] })
     }
   })
 
@@ -131,8 +138,26 @@ export default function Companies() {
                       <p className="text-sm font-medium text-gray-900">{company.name}</p>
                       <p className="text-sm text-gray-500">Slug: {company.slug}</p>
                     </div>
-                    <div className="text-sm text-gray-500">
-                      {company.findingsCount || 0} findings • {company.scansCount || 0} scans
+                    <div className="flex items-center space-x-4">
+                      <div className="text-sm text-gray-500">
+                        {company.findingsCount || 0} findings • {company.scansCount || 0} scans
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (company.scansCount > 0) {
+                            alert('Cannot delete company with existing scans. Delete scans first.')
+                            return
+                          }
+                          if (confirm(`Are you sure you want to delete "${company.name}"?`)) {
+                            deleteCompany.mutate(company.id)
+                          }
+                        }}
+                        disabled={deleteCompany.isPending}
+                        className="inline-flex items-center p-2 border border-transparent rounded-md text-red-400 hover:bg-red-50 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                        title="Delete company"
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
