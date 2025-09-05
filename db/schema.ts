@@ -56,6 +56,7 @@ export const scans = nucleiDb.table('scans', {
   scanType: text('scan_type', { enum: ['nuclei', 'nmap'] }).notNull(),
   fileName: text('file_name').notNull(),
   filePath: text('file_path').notNull(),
+  content: text('content'), // Store file content directly for chunks
   scanDate: timestamp('scan_date').notNull(),
   status: text('status', { enum: ['pending', 'processing', 'completed', 'failed'] }).notNull().default('pending'),
   metadata: jsonb('metadata').default({}),
