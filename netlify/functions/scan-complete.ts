@@ -3,27 +3,17 @@ import jwt from 'jsonwebtoken'
 import { getStore } from '@netlify/blobs'
 import crypto from 'crypto'
 
-// Extract auth context from JWT token
-function getAuthContext(event: any) {
-  const authHeader = event.headers.authorization || event.headers.Authorization
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null
-  }
-
-  try {
-    const token = authHeader.substring(7)
-    const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key'
-    const decodedToken = jwt.verify(token, jwtSecret) as any
-    
-    return {
-      tenantId: decodedToken.tenantId || decodedToken.tenant || decodedToken.sub || 'unknown',
-      userId: decodedToken.userId,
-      email: decodedToken.email
+// Extract tenant from URL path
+function getTenantFromPath(event: any) {
+  // Try to get tenant from path like /api/t/tenantSlug/scans/complete
+  if (event.path.includes('/t/')) {
+    const pathParts = event.path.split('/')
+    const tIndex = pathParts.findIndex(part => part === 't')
+    if (tIndex !== -1 && pathParts[tIndex + 1]) {
+      return pathParts[tIndex + 1]
     }
-  } catch (error) {
-    console.error('JWT verification failed:', error)
-    return null
   }
+  return null
 }
 
 export const handler: Handler = async (event, context) => {
@@ -37,14 +27,14 @@ export const handler: Handler = async (event, context) => {
     }
   }
 
-  // Get auth context
-  const auth = getAuthContext(event)
-  if (!auth) {
-    console.log('Authentication failed')
+  // Get tenant from path
+  const tenantSlug = getTenantFromPath(event)
+  if (!tenantSlug) {
+    console.log('Tenant slug missing from path')
     return {
-      statusCode: 401,
+      statusCode: 400,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Unauthorized' })
+      body: JSON.stringify({ error: 'Tenant parameter missing', debug: { path: event.path } })
     }
   }
 
@@ -79,7 +69,7 @@ export const handler: Handler = async (event, context) => {
     }
 
     // Verify ownership
-    if (sessionData.tenantId !== auth.tenantId) {
+    if (sessionData.tenantSlug !== tenantSlug) {
       return {
         statusCode: 403,
         headers: { 'Content-Type': 'application/json' },
@@ -112,10 +102,7 @@ export const handler: Handler = async (event, context) => {
 
     // Optional: Verify overall SHA-256 if provided
     if (sessionData.overallSha256) {
-      const scansStore = getStore({
-        name: 'scans',
-        consistency: 'strong'
-      })
+      const scansStore = getStore('scans')
       
       const blob = await scansStore.get(sessionData.key)
       if (blob) {
@@ -137,14 +124,11 @@ export const handler: Handler = async (event, context) => {
     }
 
     // Write metadata record
-    const metaStore = getStore({
-      name: 'scans-meta',
-      consistency: 'strong'
-    })
+    const metaStore = getStore('scans-meta')
     
-    const metadataKey = `records/${sessionData.tenantId}/${sessionData.key}.json`
+    const metadataKey = `records/${sessionData.tenantSlug}/${sessionData.key}.json`
     const metadata = {
-      tenantId: sessionData.tenantId,
+      tenantSlug: sessionData.tenantSlug,
       key: sessionData.key,
       size: sessionData.receivedBytes,
       contentType: sessionData.contentType,

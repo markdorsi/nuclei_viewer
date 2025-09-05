@@ -7,7 +7,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB max
 const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
 
 export default function Scans() {
-  const { token } = useAuth();
+  const { token, tenant } = useAuth();
   const queryClient = useQueryClient();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [scanName, setScanName] = useState("");
@@ -24,7 +24,7 @@ export default function Scans() {
   const { data: scans, isLoading: isLoadingScans } = useQuery({
     queryKey: ['scans'],
     queryFn: async () => {
-      const res = await fetch('/api/scans/list', {
+      const res = await fetch(`/api/t/${tenant?.slug}/scans/list`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -34,7 +34,7 @@ export default function Scans() {
       }
       return res.json()
     },
-    enabled: !!token
+    enabled: !!token && !!tenant?.slug
   })
 
   const calculateChunks = (fileSize: number, chunkSize: number) => {
@@ -53,7 +53,7 @@ export default function Scans() {
     const chunk = file.slice(start, end);
     
     const response = await fetch(
-      `/api/scans/chunk?uploadId=${uploadId}&index=${chunkIndex}&total=${totalChunks}`,
+      `/api/t/${tenant?.slug}/scans/chunk?uploadId=${uploadId}&index=${chunkIndex}&total=${totalChunks}`,
       {
         method: 'POST',
         headers: {
@@ -83,7 +83,7 @@ export default function Scans() {
 
     try {
       // Step 1: Start upload session
-      const startRes = await fetch("/api/scans/start", {
+      const startRes = await fetch(`/api/t/${tenant?.slug}/scans/start`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -123,7 +123,7 @@ export default function Scans() {
       }
 
       // Step 3: Complete upload
-      const completeRes = await fetch("/api/scans/complete", {
+      const completeRes = await fetch(`/api/t/${tenant?.slug}/scans/complete`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -151,7 +151,7 @@ export default function Scans() {
       // Try to abort the upload session
       if (uploadIdRef.current) {
         try {
-          await fetch("/api/scans/abort", {
+          await fetch(`/api/t/${tenant?.slug}/scans/abort`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -173,7 +173,7 @@ export default function Scans() {
     
     if (uploadIdRef.current) {
       try {
-        await fetch("/api/scans/abort", {
+        await fetch(`/api/t/${tenant?.slug}/scans/abort`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

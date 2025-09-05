@@ -4,28 +4,17 @@ import { getStore } from '@netlify/blobs'
 
 const STORE_NAME = 'scans'
 
-// Extract auth context from JWT token
-function getAuthContext(event: any) {
-  const authHeader = event.headers.authorization || event.headers.Authorization
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null
-  }
-
-  try {
-    const token = authHeader.substring(7)
-    const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key'
-    const decodedToken = jwt.verify(token, jwtSecret) as any
-    
-    return {
-      tenantId: decodedToken.tenantId,
-      userId: decodedToken.userId,
-      email: decodedToken.email,
-      tenantSlug: decodedToken.tenantSlug
+// Extract tenant from URL path
+function getTenantFromPath(event: any) {
+  // Try to get tenant from path like /api/t/tenantSlug/scans/list
+  if (event.path.includes('/t/')) {
+    const pathParts = event.path.split('/')
+    const tIndex = pathParts.findIndex(part => part === 't')
+    if (tIndex !== -1 && pathParts[tIndex + 1]) {
+      return pathParts[tIndex + 1]
     }
-  } catch (error) {
-    console.error('JWT verification failed:', error)
-    return null
   }
+  return null
 }
 
 export const handler: Handler = async (event, context) => {
@@ -39,13 +28,13 @@ export const handler: Handler = async (event, context) => {
     }
   }
 
-  // Get auth context
-  const auth = getAuthContext(event)
-  if (!auth) {
-    console.log('Authentication failed')
+  // Get tenant from path
+  const tenantSlug = getTenantFromPath(event)
+  if (!tenantSlug) {
+    console.log('Tenant slug missing from path')
     return {
-      statusCode: 401,
-      body: JSON.stringify({ error: 'Unauthorized' })
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Tenant parameter missing', debug: { path: event.path } })
     }
   }
 
@@ -60,7 +49,7 @@ export const handler: Handler = async (event, context) => {
     const date = params.get('date')
     
     // Build prefix for multi-tenant isolation
-    let prefix = `${auth.tenantId}/`
+    let prefix = `${tenantSlug}/`
     if (date) {
       // Validate date format (YYYY-MM-DD)
       const dateRegex = /^\d{4}-\d{2}-\d{2}$/
