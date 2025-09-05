@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
-import { PlusIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline'
 
 export default function Companies() {
   const { tenant } = useAuth()
@@ -9,6 +9,8 @@ export default function Companies() {
   const [isAddingCompany, setIsAddingCompany] = useState(false)
   const [newCompanyName, setNewCompanyName] = useState('')
   const [newCompanySlug, setNewCompanySlug] = useState('')
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+  const [selectAll, setSelectAll] = useState(false)
 
   const { data: companies, isLoading } = useQuery({
     queryKey: ['companies', tenant?.id],
@@ -38,9 +40,113 @@ export default function Companies() {
     }
   })
 
+  const deleteCompany = useMutation({
+    mutationFn: async (companyId: string) => {
+      const res = await fetch(`/api/t/${tenant?.slug}/companies`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: companyId })
+      })
+      if (!res.ok) {
+        const error = await res.json()
+        throw new Error(error.message || 'Failed to delete company')
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['companies', tenant?.id] })
+      setSelectedCompanies([])
+      setSelectAll(false)
+    },
+    onError: (error) => {
+      alert(`Error: ${error.message}`)
+    }
+  })
+
+  const bulkDeleteCompanies = useMutation({
+    mutationFn: async (companyIds: string[]) => {
+      const results = []
+      for (const companyId of companyIds) {
+        try {
+          const res = await fetch(`/api/t/${tenant?.slug}/companies`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: companyId })
+          })
+          if (!res.ok) {
+            const error = await res.json()
+            results.push({ id: companyId, success: false, error: error.message })
+          } else {
+            results.push({ id: companyId, success: true })
+          }
+        } catch (error) {
+          results.push({ id: companyId, success: false, error: 'Network error' })
+        }
+      }
+      return results
+    },
+    onSuccess: (results) => {
+      queryClient.invalidateQueries({ queryKey: ['companies', tenant?.id] })
+      setSelectedCompanies([])
+      setSelectAll(false)
+      
+      const failed = results.filter(r => !r.success)
+      if (failed.length > 0) {
+        const failedMessages = failed.map(f => `Failed to delete company: ${f.error}`).join('\n')
+        alert(`Some deletions failed:\n${failedMessages}`)
+      }
+    },
+    onError: (error) => {
+      alert(`Bulk delete error: ${error.message}`)
+    }
+  })
+
   const handleAddCompany = () => {
     if (newCompanyName && newCompanySlug) {
       createCompany.mutate({ name: newCompanyName, slug: newCompanySlug })
+    }
+  }
+
+  const handleDeleteCompany = (company: any) => {
+    if (window.confirm(`Are you sure you want to delete "${company.name}"? This action cannot be undone.`)) {
+      deleteCompany.mutate(company.id)
+    }
+  }
+
+  const handleSelectCompany = (companyId: string, checked: boolean) => {
+    if (checked) {
+      const newSelected = [...selectedCompanies, companyId]
+      setSelectedCompanies(newSelected)
+      
+      // Check if all companies are now selected
+      if (companies && newSelected.length === companies.length) {
+        setSelectAll(true)
+      }
+    } else {
+      setSelectedCompanies(prev => prev.filter(id => id !== companyId))
+      setSelectAll(false)
+    }
+  }
+
+  const handleSelectAll = (checked: boolean) => {
+    setSelectAll(checked)
+    if (checked && companies) {
+      setSelectedCompanies(companies.map((c: any) => c.id))
+    } else {
+      setSelectedCompanies([])
+    }
+  }
+
+  const handleBulkDelete = () => {
+    if (selectedCompanies.length === 0) return
+    
+    const selectedCompanyNames = companies
+      ?.filter((c: any) => selectedCompanies.includes(c.id))
+      .map((c: any) => c.name)
+      .join(', ')
+    
+    if (window.confirm(`Are you sure you want to delete ${selectedCompanies.length} companies (${selectedCompanyNames})? This action cannot be undone.`)) {
+      bulkDeleteCompanies.mutate(selectedCompanies)
     }
   }
 
@@ -112,6 +218,25 @@ export default function Companies() {
         </div>
       )}
 
+      {/* Bulk Actions */}
+      {selectedCompanies.length > 0 && (
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-md p-4">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-blue-800">
+              {selectedCompanies.length} companies selected
+            </div>
+            <button
+              onClick={handleBulkDelete}
+              disabled={bulkDeleteCompanies.isPending}
+              className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+            >
+              <TrashIcon className="-ml-1 mr-2 h-4 w-4" aria-hidden="true" />
+              {bulkDeleteCompanies.isPending ? 'Deleting...' : 'Delete Selected'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6 bg-white shadow overflow-hidden sm:rounded-md">
         {isLoading ? (
           <div className="px-4 py-5 sm:p-6">
@@ -122,23 +247,58 @@ export default function Companies() {
             </div>
           </div>
         ) : companies?.length > 0 ? (
-          <ul className="divide-y divide-gray-200">
-            {companies.map((company: any) => (
-              <li key={company.id}>
-                <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{company.name}</p>
-                      <p className="text-sm text-gray-500">Slug: {company.slug}</p>
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {company.findingsCount || 0} findings
+          <div>
+            {/* Select All Header */}
+            <div className="px-4 py-3 sm:px-6 bg-gray-50 border-b border-gray-200">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={selectAll}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                />
+                <label className="ml-2 text-sm font-medium text-gray-900">
+                  Select All Companies
+                </label>
+              </div>
+            </div>
+            
+            <ul className="divide-y divide-gray-200">
+              {companies.map((company: any) => (
+                <li key={company.id}>
+                  <div className="px-4 py-4 sm:px-6 hover:bg-gray-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedCompanies.includes(company.id)}
+                          onChange={(e) => handleSelectCompany(company.id, e.target.checked)}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{company.name}</p>
+                          <p className="text-sm text-gray-500">Slug: {company.slug}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <div className="text-sm text-gray-500">
+                          {company.findingsCount || 0} findings
+                        </div>
+                        <button
+                          onClick={() => handleDeleteCompany(company)}
+                          disabled={deleteCompany.isPending}
+                          className="inline-flex items-center p-1 border border-transparent rounded-full shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                          title="Delete company"
+                        >
+                          <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : (
           <div className="px-4 py-5 sm:p-6">
             <p className="text-sm text-gray-500">No companies found. Add your first company to get started.</p>

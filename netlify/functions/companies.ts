@@ -114,5 +114,66 @@ export const handler: Handler = async (event, context) => {
     }
   }
 
+  if (event.httpMethod === 'DELETE') {
+    try {
+      const body = JSON.parse(event.body || '{}')
+      const companyId = body.id
+      
+      if (!companyId) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: 'Company ID is required' })
+        }
+      }
+
+      // Check if company exists and belongs to this tenant
+      const [company] = await db
+        .select()
+        .from(companies)
+        .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenant.id)))
+        .limit(1)
+
+      if (!company) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ error: 'Company not found' })
+        }
+      }
+
+      // Check if there are any findings associated with this company
+      const [findingsCount] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(findings)
+        .where(eq(findings.companyId, companyId))
+
+      if (findingsCount.count > 0) {
+        return {
+          statusCode: 409,
+          body: JSON.stringify({ 
+            error: 'Cannot delete company with existing findings',
+            message: `This company has ${findingsCount.count} associated findings. Please delete or reassign the findings first.`
+          })
+        }
+      }
+
+      // Delete the company
+      await db
+        .delete(companies)
+        .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenant.id)))
+
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Company deleted successfully' })
+      }
+    } catch (error) {
+      console.error('Failed to delete company:', error)
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Failed to delete company' })
+      }
+    }
+  }
+
   return { statusCode: 405, body: 'Method Not Allowed' }
 }

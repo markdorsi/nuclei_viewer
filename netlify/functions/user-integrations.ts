@@ -45,13 +45,25 @@ export const handler: Handler = async (event, context) => {
     }
   }
   
-  // Get user from context (would come from Netlify Identity)
-  const { user: identityUser } = context.clientContext || {}
-  
-  if (!identityUser) {
+  // Get JWT token from Authorization header
+  const authHeader = event.headers.authorization || event.headers.Authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return {
       statusCode: 401,
-      body: JSON.stringify({ error: 'Not authenticated' })
+      body: JSON.stringify({ error: 'Authorization header missing or invalid' })
+    }
+  }
+
+  let decodedToken
+  try {
+    const token = authHeader.substring(7) // Remove "Bearer " prefix
+    const jwt = await import('jsonwebtoken')
+    const jwtSecret = process.env.JWT_SECRET || 'your-jwt-secret-key'
+    decodedToken = jwt.default.verify(token, jwtSecret) as any
+  } catch (error) {
+    return {
+      statusCode: 401,
+      body: JSON.stringify({ error: 'Invalid or expired token' })
     }
   }
 
@@ -72,7 +84,7 @@ export const handler: Handler = async (event, context) => {
   const [user] = await db
     .select()
     .from(users)
-    .where(eq(users.googleId, identityUser.sub))
+    .where(eq(users.googleId, decodedToken.googleId))
     .limit(1)
 
   if (!user) {
