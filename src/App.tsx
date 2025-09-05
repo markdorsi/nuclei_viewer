@@ -4,7 +4,6 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Findings from './pages/Findings'
 import Companies from './pages/Companies'
-import Scans from './pages/Scans'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
@@ -22,7 +21,6 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="findings" element={<Findings />} />
             <Route path="companies" element={<Companies />} />
-            <Route path="scans" element={<Scans />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
           </Route>

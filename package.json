@@ -29,7 +29,6 @@
   "dependencies": {
     "@headlessui/react": "^2.2.7",
     "@heroicons/react": "^2.2.0",
-    "@netlify/blobs": "^10.0.10",
     "@tanstack/react-query": "^5.86.0",
     "@vitejs/plugin-react": "^5.0.2",
     "axios": "^1.11.0",

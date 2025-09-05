@@ -1,5 +1,5 @@
 import type { Handler } from '@netlify/functions'
-import { db, companies, tenants, findings, scans } from '../../db'
+import { db, companies, tenants, findings } from '../../db'
 import { eq, and, sql } from 'drizzle-orm'
 
 // Helper function to extract tenant from query params or path
@@ -54,7 +54,6 @@ export const handler: Handler = async (event, context) => {
           metadata: companies.metadata,
           createdAt: companies.createdAt,
           findingsCount: sql<number>`(SELECT COUNT(*) FROM nuclei_db.findings WHERE company_id = ${companies.id})::int`,
-          scansCount: sql<number>`(SELECT COUNT(*) FROM nuclei_db.scans WHERE company_id = ${companies.id})::int`
         })
         .from(companies)
         .where(eq(companies.tenantId, tenant.id))

@@ -132,7 +132,7 @@ export default function Companies() {
                       <p className="text-sm text-gray-500">Slug: {company.slug}</p>
                     </div>
                     <div className="text-sm text-gray-500">
-                      {company.findingsCount || 0} findings • {company.scansCount || 0} scans
+                      {company.findingsCount || 0} findings
                     </div>
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import type { Handler } from '@netlify/functions'
-import { db, findings, companies, scans, assets, tenants } from '../../db'
+import { db, findings, companies, assets, tenants } from '../../db'
 import { eq, and, sql } from 'drizzle-orm'
 
 export const handler: Handler = async (event, context) => {
@@ -61,11 +61,9 @@ export const handler: Handler = async (event, context) => {
     const [counts] = await db
       .select({
         companies: sql<number>`COUNT(DISTINCT ${companies.id})::int`,
-        scans: sql<number>`COUNT(DISTINCT ${scans.id})::int`,
         assets: sql<number>`COUNT(DISTINCT ${assets.id})::int`
       })
       .from(companies)
-      .leftJoin(scans, and(eq(scans.tenantId, tenant.id), eq(scans.companyId, companies.id)))
       .leftJoin(assets, and(eq(assets.tenantId, tenant.id), eq(assets.companyId, companies.id)))
       .where(eq(companies.tenantId, tenant.id))
 
