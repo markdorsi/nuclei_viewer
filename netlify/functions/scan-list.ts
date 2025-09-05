@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
-import { getStore } from '@netlify/blobs'
+import { getStore, connectLambda } from '@netlify/blobs'
 
 const STORE_NAME = 'scans'
 
@@ -20,6 +20,9 @@ function getTenantFromPath(event: any) {
 export const handler: Handler = async (event, context) => {
   console.log('=== SCAN LIST ===')
   console.log('Method:', event.httpMethod)
+  
+  // Initialize Netlify Blobs for Lambda compatibility mode
+  connectLambda(event)
 
   if (event.httpMethod !== 'GET') {
     return {
@@ -38,10 +41,7 @@ export const handler: Handler = async (event, context) => {
     }
   }
 
-  console.log('Authenticated user:', { 
-    tenantId: auth.tenantId,
-    email: auth.email 
-  })
+  console.log('Tenant from path:', tenantSlug)
 
   try {
     // Get optional date filter from query parameters
@@ -71,12 +71,33 @@ export const handler: Handler = async (event, context) => {
       limit: 200 
     })
 
-    // Transform to expected format
-    const items = blobs.map(blob => ({
-      key: blob.key,
-      size: blob.size,
-      uploadedAt: blob.uploaded_at
-    }))
+    // Get metadata store to retrieve size and upload time
+    const metaStore = getStore('scans-meta')
+    
+    // Transform to expected format with metadata lookup
+    const items = []
+    for (const blob of blobs) {
+      try {
+        // Try to get metadata for this scan
+        const metadataKey = `records/${tenantSlug}/${blob.key}.json`
+        const metadataText = await metaStore.get(metadataKey)
+        const metadata = metadataText ? JSON.parse(metadataText) : null
+        
+        items.push({
+          key: blob.key,
+          size: metadata?.size || 0,
+          uploadedAt: metadata?.completedAt || new Date().toISOString()
+        })
+      } catch (err) {
+        console.error(`Error getting metadata for ${blob.key}:`, err)
+        // Fallback without metadata
+        items.push({
+          key: blob.key,
+          size: 0,
+          uploadedAt: new Date().toISOString()
+        })
+      }
+    }
 
     console.log(`Found ${items.length} scans`)
 

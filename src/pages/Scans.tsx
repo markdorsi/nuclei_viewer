@@ -22,8 +22,9 @@ export default function Scans() {
 
   // Query to list scans (keeping existing functionality)
   const { data: scans, isLoading: isLoadingScans } = useQuery({
-    queryKey: ['scans'],
+    queryKey: ['scans', tenant?.slug],
     queryFn: async () => {
+      console.log('🔍 Fetching scans for tenant:', tenant?.slug)
       const res = await fetch(`/api/t/${tenant?.slug}/scans/list`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -32,7 +33,9 @@ export default function Scans() {
       if (!res.ok) {
         throw new Error('Failed to fetch scans')
       }
-      return res.json()
+      const data = await res.json()
+      console.log('📄 Scans fetched:', data)
+      return data
     },
     enabled: !!token && !!tenant?.slug
   })
@@ -141,7 +144,8 @@ export default function Scans() {
       setSelectedFile(null);
       setScanName("");
       uploadIdRef.current = null;
-      queryClient.invalidateQueries({ queryKey: ["scans"] });
+      console.log('✅ Upload complete, invalidating cache for tenant:', tenant?.slug)
+      queryClient.invalidateQueries({ queryKey: ["scans", tenant?.slug] });
       
     } catch (err: any) {
       console.error('Upload error:', err);

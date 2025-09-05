@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
-import { getStore } from '@netlify/blobs'
+import { getStore, connectLambda } from '@netlify/blobs'
 
 // Extract tenant from URL path
 function getTenantFromPath(event: any) {
@@ -17,6 +17,9 @@ function getTenantFromPath(event: any) {
 
 export const handler: Handler = async (event, context) => {
   console.log('=== SCAN ABORT ===')
+  
+  // Initialize Netlify Blobs for Lambda compatibility mode
+  connectLambda(event)
   
   if (event.httpMethod !== 'POST') {
     return {
@@ -54,7 +57,8 @@ export const handler: Handler = async (event, context) => {
     // Get session from Netlify Blobs
     const sessionsStore = getStore('uploads-sessions')
     
-    const sessionData = await sessionsStore.getJSON(`${uploadId}.json`) as any
+    const sessionDataText = await sessionsStore.get(`${uploadId}.json`)
+    const sessionData = sessionDataText ? JSON.parse(sessionDataText) : null
     
     if (!sessionData) {
       // Already deleted or never existed
