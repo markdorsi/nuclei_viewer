@@ -1,0 +1,179 @@
+import type { Handler } from '@netlify/functions'
+import { db, companies, tenants, findings } from '../../db'
+import { eq, and, sql } from 'drizzle-orm'
+
+// Helper function to extract tenant from query params or path
+function extractTenantSlug(event: any): string | null {
+  // Try query parameter first (from redirect rule)
+  let tenantSlug = event.queryStringParameters?.tenant
+  
+  // If no query parameter, try extracting from path
+  if (!tenantSlug && event.path.includes('/t/')) {
+    const pathParts = event.path.split('/')
+    const tIndex = pathParts.findIndex((part: string) => part === 't')
+    if (tIndex !== -1 && pathParts[tIndex + 1]) {
+      tenantSlug = pathParts[tIndex + 1]
+    }
+  }
+  
+  return tenantSlug
+}
+
+export const handler: Handler = async (event, context) => {
+  // Get tenant from query parameter (set by redirect rule) or path
+  const tenantSlug = extractTenantSlug(event)
+  
+  if (!tenantSlug) {
+    return {
+      statusCode: 400,
+      body: JSON.stringify({ error: 'Tenant parameter missing' })
+    }
+  }
+  
+  // Get tenant
+  const [tenant] = await db
+    .select()
+    .from(tenants)
+    .where(eq(tenants.slug, tenantSlug))
+    .limit(1)
+  
+  if (!tenant) {
+    return {
+      statusCode: 404,
+      body: JSON.stringify({ error: 'Tenant not found' })
+    }
+  }
+  
+  if (event.httpMethod === 'GET') {
+    try {
+      const companyList = await db
+        .select({
+          id: companies.id,
+          name: companies.name,
+          slug: companies.slug,
+          metadata: companies.metadata,
+          createdAt: companies.createdAt,
+          findingsCount: sql<number>`(SELECT COUNT(*) FROM nuclei_db.findings WHERE company_id = ${companies.id})::int`,
+        })
+        .from(companies)
+        .where(eq(companies.tenantId, tenant.id))
+        .orderBy(companies.name)
+      
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(companyList)
+      }
+    } catch (error) {
+      console.error('Failed to fetch companies:', error)
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Failed to fetch companies' })
+      }
+    }
+  }
+
+  if (event.httpMethod === 'POST') {
+    try {
+      const body = JSON.parse(event.body || '{}')
+      
+      if (!body.name || !body.slug) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: 'Name and slug are required' })
+        }
+      }
+      
+      const [newCompany] = await db
+        .insert(companies)
+        .values({
+          tenantId: tenant.id,
+          name: body.name,
+          slug: body.slug,
+          metadata: body.metadata || {}
+        })
+        .returning()
+      
+      return {
+        statusCode: 201,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCompany)
+      }
+    } catch (error: any) {
+      if (error.code === '23505') { // Unique constraint violation
+        return {
+          statusCode: 409,
+          body: JSON.stringify({ error: 'Company with this slug already exists' })
+        }
+      }
+      console.error('Failed to create company:', error)
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Failed to create company' })
+      }
+    }
+  }
+
+  if (event.httpMethod === 'DELETE') {
+    try {
+      const body = JSON.parse(event.body || '{}')
+      const companyId = body.id
+      
+      if (!companyId) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: 'Company ID is required' })
+        }
+      }
+
+      // Check if company exists and belongs to this tenant
+      const [company] = await db
+        .select()
+        .from(companies)
+        .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenant.id)))
+        .limit(1)
+
+      if (!company) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ error: 'Company not found' })
+        }
+      }
+
+      // Check if there are any findings associated with this company
+      const [findingsCount] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(findings)
+        .where(eq(findings.companyId, companyId))
+
+      if (findingsCount.count > 0) {
+        return {
+          statusCode: 409,
+          body: JSON.stringify({ 
+            error: 'Cannot delete company with existing findings',
+            message: `This company has ${findingsCount.count} associated findings. Please delete or reassign the findings first.`
+          })
+        }
+      }
+
+      // Delete the company
+      await db
+        .delete(companies)
+        .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenant.id)))
+
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'Company deleted successfully' })
+      }
+    } catch (error) {
+      console.error('Failed to delete company:', error)
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Failed to delete company' })
+      }
+    }
+  }
+
+  return { statusCode: 405, body: 'Method Not Allowed' }
+}

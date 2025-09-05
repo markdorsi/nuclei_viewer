@@ -4,6 +4,9 @@
     "github_auth",
     "git_init",
     "project_structure",
-    "github_repo"
+    "github_repo",
+    "ci_setup",
+    "security_protection",
+    "workflow_test"
   ]
 }

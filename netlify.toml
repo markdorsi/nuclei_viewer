@@ -1,18 +1,69 @@
 [build]
-  publish = "public"
-  command = ""
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = "dist"
 
-[context.deploy-preview]
-  command = ""
+[dev]
+  command = "npm run dev:ui"
+  targetPort = 5173
+  functionsPort = 9999
   
-[context.branch-deploy]
-  command = ""
+[[redirects]]
+  from = "/api/scans/start"
+  to = "/.netlify/functions/scan-start"
+  status = 200
 
-# Automatic deploy previews for all branches and PRs
-[build.processing]
-  skip_processing = false
+[[redirects]]
+  from = "/api/scans/chunk"
+  to = "/.netlify/functions/scan-chunk"
+  status = 200
 
-# SPA redirect for single page applications
+[[redirects]]
+  from = "/api/scans/complete"
+  to = "/.netlify/functions/scan-complete"
+  status = 200
+
+[[redirects]]
+  from = "/api/scans/abort"
+  to = "/.netlify/functions/scan-abort"
+  status = 200
+
+[[redirects]]
+  from = "/api/scans/upload-url"
+  to = "/.netlify/functions/scan-upload-url"
+  status = 200
+
+[[redirects]]
+  from = "/api/scans/record"
+  to = "/.netlify/functions/scan-record"
+  status = 200
+
+[[redirects]]
+  from = "/api/scans/upload"
+  to = "/.netlify/functions/scan-upload"
+  status = 200
+
+[[redirects]]
+  from = "/api/scans/list"
+  to = "/.netlify/functions/scan-list"
+  status = 200
+
+[[redirects]]
+  from = "/api/scans/read"
+  to = "/.netlify/functions/scan-read"
+  status = 200
+
+[[redirects]]
+  from = "/api/t/:tenant/:function"
+  to = "/.netlify/functions/:function?tenant=:tenant"
+  status = 200
+
+# Handle auth callback
+[[redirects]]
+  from = "/auth/callback"
+  to = "/.netlify/functions/auth-callback"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
