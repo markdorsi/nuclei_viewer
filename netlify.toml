@@ -53,6 +53,32 @@
   to = "/.netlify/functions/scan-read"
   status = 200
 
+# Tenant-aware scan endpoints
+[[redirects]]
+  from = "/api/t/:tenant/scans/start"
+  to = "/.netlify/functions/scan-start"
+  status = 200
+
+[[redirects]]
+  from = "/api/t/:tenant/scans/chunk"
+  to = "/.netlify/functions/scan-chunk"
+  status = 200
+
+[[redirects]]
+  from = "/api/t/:tenant/scans/complete"
+  to = "/.netlify/functions/scan-complete"
+  status = 200
+
+[[redirects]]
+  from = "/api/t/:tenant/scans/abort"
+  to = "/.netlify/functions/scan-abort"
+  status = 200
+
+[[redirects]]
+  from = "/api/t/:tenant/scans/list"
+  to = "/.netlify/functions/scan-list"
+  status = 200
+
 [[redirects]]
   from = "/api/t/:tenant/:function"
   to = "/.netlify/functions/:function?tenant=:tenant"
