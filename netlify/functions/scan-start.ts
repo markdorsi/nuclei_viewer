@@ -1,6 +1,6 @@
-import type { Handler } from '@netlify/functions'
+import type { Handler, HandlerContext, HandlerEvent } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
-import { getStore } from '@netlify/blobs'
+import { getStore, connectLambda } from '@netlify/blobs'
 import crypto from 'crypto'
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024 // 5GB
@@ -29,8 +29,11 @@ function getTenantFromPath(event: any) {
   return null
 }
 
-export const handler: Handler = async (event, context) => {
+export const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
   console.log('=== SCAN START ===')
+  
+  // Initialize Netlify Blobs for Lambda compatibility mode
+  connectLambda(event)
   
   if (event.httpMethod !== 'POST') {
     return {
@@ -106,7 +109,7 @@ export const handler: Handler = async (event, context) => {
       chunks: []
     }
 
-    await sessionsStore.setJSON(`${uploadId}.json`, sessionData)
+    await sessionsStore.set(`${uploadId}.json`, JSON.stringify(sessionData))
 
     // Initialize an empty blob at the destination key
     const scansStore = getStore('scans')

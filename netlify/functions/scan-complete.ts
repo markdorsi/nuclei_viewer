@@ -1,6 +1,6 @@
 import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
-import { getStore } from '@netlify/blobs'
+import { getStore, connectLambda } from '@netlify/blobs'
 import crypto from 'crypto'
 
 // Extract tenant from URL path
@@ -18,6 +18,9 @@ function getTenantFromPath(event: any) {
 
 export const handler: Handler = async (event, context) => {
   console.log('=== SCAN COMPLETE ===')
+  
+  // Initialize Netlify Blobs for Lambda compatibility mode
+  connectLambda(event)
   
   if (event.httpMethod !== 'POST') {
     return {
@@ -53,12 +56,10 @@ export const handler: Handler = async (event, context) => {
     console.log(`Completing upload ${uploadId}`)
 
     // Get session from Netlify Blobs
-    const sessionsStore = getStore({
-      name: 'uploads-sessions',
-      consistency: 'strong'
-    })
+    const sessionsStore = getStore('uploads-sessions')
     
-    const sessionData = await sessionsStore.getJSON(`${uploadId}.json`) as any
+    const sessionDataText = await sessionsStore.get(`${uploadId}.json`)
+    const sessionData = sessionDataText ? JSON.parse(sessionDataText) : null
     
     if (!sessionData) {
       return {
@@ -138,16 +139,16 @@ export const handler: Handler = async (event, context) => {
       overallSha256: sessionData.overallSha256 || null,
       chunks: sessionData.chunks.length,
       uploadId: uploadId,
-      userId: auth.userId,
-      email: auth.email
+      userId: null, // User info not available in tenant-aware routing
+      email: null
     }
     
-    await metaStore.setJSON(metadataKey, metadata)
+    await metaStore.set(metadataKey, JSON.stringify(metadata))
 
     // Update session status
     sessionData.status = 'complete'
     sessionData.completedAt = new Date().toISOString()
-    await sessionsStore.setJSON(`${uploadId}.json`, sessionData)
+    await sessionsStore.set(`${uploadId}.json`, JSON.stringify(sessionData))
 
     console.log(`Upload ${uploadId} completed successfully`)
 
