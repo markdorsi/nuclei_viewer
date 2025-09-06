@@ -2,6 +2,8 @@ import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
 import { getStore, connectLambda } from '@netlify/blobs'
 import crypto from 'crypto'
+import { db, scans, tenants, companies } from '../../db'
+import { eq, and } from 'drizzle-orm'
 
 // Extract tenant from URL path
 function getTenantFromPath(event: any) {
@@ -157,9 +159,99 @@ export const handler: Handler = async (event, context) => {
     
     await metaStore.set(metadataKey, JSON.stringify(metadata))
 
+    // Create database scan record if company is associated
+    let scanId: string | null = null
+    if (sessionData.companyId) {
+      try {
+        // Get tenant from database
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.slug, sessionData.tenantSlug))
+          .limit(1)
+
+        if (tenant) {
+          // Verify company exists and belongs to tenant
+          const [company] = await db
+            .select()
+            .from(companies)
+            .where(and(eq(companies.id, sessionData.companyId), eq(companies.tenantId, tenant.id)))
+            .limit(1)
+
+          if (company) {
+            // Determine scan type from file extension
+            const fileName = sessionData.originalName.toLowerCase()
+            let scanType = 'nuclei'
+            if (fileName.includes('nmap') || fileName.includes('xml')) {
+              scanType = 'nmap'
+            } else if (fileName.includes('masscan')) {
+              scanType = 'masscan'
+            }
+
+            // Create scan record
+            const [newScan] = await db
+              .insert(scans)
+              .values({
+                tenantId: tenant.id,
+                companyId: sessionData.companyId,
+                scanType,
+                fileName: sessionData.originalName,
+                filePath: sessionData.key,
+                scanDate: new Date(sessionData.createdAt),
+                status: 'pending',
+                metadata: {
+                  uploadId,
+                  size: sessionData.receivedBytes,
+                  contentType: sessionData.contentType,
+                  overallSha256: sessionData.overallSha256
+                }
+              })
+              .returning({ id: scans.id })
+
+            scanId = newScan.id
+            console.log(`✅ Created scan record: ${scanId}`)
+
+            // Update scan status to processing and trigger automatic processing
+            await db
+              .update(scans)
+              .set({ status: 'processing' })
+              .where(eq(scans.id, scanId))
+
+            // Trigger automatic processing (fire-and-forget)
+            fetch(`/api/t/${sessionData.tenantSlug}/scans/process`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                scanId
+              })
+            }).catch(error => {
+              console.error('Failed to trigger scan processing:', error)
+              // Update scan status to failed
+              db.update(scans)
+                .set({ status: 'failed' })
+                .where(eq(scans.id, scanId))
+                .catch(console.error)
+            })
+
+            console.log(`🚀 Triggered automatic processing for scan: ${scanId}`)
+          } else {
+            console.warn(`Company ${sessionData.companyId} not found for tenant ${sessionData.tenantSlug}`)
+          }
+        } else {
+          console.warn(`Tenant ${sessionData.tenantSlug} not found`)
+        }
+      } catch (dbError) {
+        console.error('Error creating scan database record:', dbError)
+        // Continue anyway - the file upload was successful
+      }
+    }
+
     // Update session status
     sessionData.status = 'complete'
     sessionData.completedAt = new Date().toISOString()
+    sessionData.scanId = scanId || undefined
     await sessionsStore.set(`${uploadId}.json`, JSON.stringify(sessionData))
 
     console.log(`Upload ${uploadId} completed successfully`)
