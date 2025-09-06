@@ -415,16 +415,16 @@ export const handler: Handler = async (event, context) => {
           assetId = processedAssets.get(assetKey) || null
         }
 
-        // Generate dedupe key using the extracted template name
+        // Extract finding information with flexible field mapping (FIRST)
+        const severity = result.info?.severity || result.severity || 'info'
+        const templateId = result.info?.id || result.template_id || result.templateId || result['template-id'] || result.template || 'unknown'
+        const templateName = result.info?.name || result.template_name || result.templateName || result['template-name'] || templateId
+
+        // Generate dedupe key using the extracted template name (AFTER templateName is defined)
         const dedupeKey = crypto
           .createHash('md5')
           .update(`${tenantSlug}:${scanRecord?.companyId || 'unknown'}:${templateName}:${target}`)
           .digest('hex')
-
-        // Extract finding information with flexible field mapping
-        const severity = result.info?.severity || result.severity || 'info'
-        const templateId = result.info?.id || result.template_id || result.templateId || result['template-id'] || result.template || 'unknown'
-        const templateName = result.info?.name || result.template_name || result.templateName || result['template-name'] || templateId
         const detectedAt = new Date()
         const slaDueDate = generateSlaDueDate(severity, detectedAt)
         const slaTargetDays = {
