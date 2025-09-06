@@ -19,53 +19,122 @@ function getTenantFromPath(event: any) {
 
 // Parse nuclei JSON/JSONL results (simplified version for debugging)
 function parseNucleiResults(content: string): { summary: any, samples: any[] } {
-  const lines = content.split('\n').filter(line => line.trim())
+  const trimmedContent = content.trim()
   const samples = []
   let validResults = 0
+  let totalItems = 0
+  let format = 'unknown'
   
-  for (let i = 0; i < Math.min(lines.length, 5); i++) {
-    const line = lines[i]
+  // Check if it's a JSON array format
+  if (trimmedContent.startsWith('[') && trimmedContent.endsWith(']')) {
+    format = 'json_array'
     try {
-      const result = JSON.parse(line)
-      samples.push({
-        lineNumber: i + 1,
-        parsed: true,
-        structure: Object.keys(result),
-        hasInfo: !!(result.info && typeof result.info === 'object'),
-        hasTemplate: !!(result.template && typeof result.template === 'string'),
-        hasTemplateId: !!(result.template_id || result.templateId || result['template-id']),
-        hasHost: !!(result.host || result.target),
-        severity: result.info?.severity || result.severity,
-        templateName: result.info?.name || result.template_name || result.templateName,
-        target: result.host || result.target || result.url,
-        sample: JSON.stringify(result, null, 2).substring(0, 500)
-      })
-      
-      if (result && typeof result === 'object') {
-        const hasInfo = result.info && typeof result.info === 'object'
-        const hasTemplate = result.template && typeof result.template === 'string'
-        const hasTemplateId = result.template_id || result.templateId || result['template-id']
-        const hasHost = result.host || result.target
+      const jsonArray = JSON.parse(trimmedContent)
+      if (Array.isArray(jsonArray)) {
+        totalItems = jsonArray.length
         
-        if (hasInfo || hasTemplate || hasTemplateId || hasHost) {
-          validResults++
+        for (let i = 0; i < Math.min(jsonArray.length, 5); i++) {
+          const result = jsonArray[i]
+          samples.push({
+            itemNumber: i + 1,
+            parsed: true,
+            structure: Object.keys(result),
+            hasInfo: !!(result.info && typeof result.info === 'object'),
+            hasTemplate: !!(result.template && typeof result.template === 'string'),
+            hasTemplateId: !!(result['template-id'] || result.template_id || result.templateId),
+            hasHost: !!(result.host || result.target),
+            severity: result.info?.severity || result.severity,
+            templateName: result.info?.name || result.template_name || result.templateName,
+            target: result.host || result.target || result.url,
+            sample: JSON.stringify(result, null, 2).substring(0, 500)
+          })
+          
+          if (result && typeof result === 'object') {
+            const hasInfo = result.info && typeof result.info === 'object'
+            const hasTemplate = result.template && typeof result.template === 'string'
+            const hasTemplateId = result['template-id'] || result.template_id || result.templateId
+            const hasHost = result.host || result.target
+            
+            if (hasInfo || hasTemplate || hasTemplateId || hasHost) {
+              validResults++
+            }
+          }
+        }
+        
+        // Count remaining valid results without sampling
+        for (let i = 5; i < jsonArray.length; i++) {
+          const result = jsonArray[i]
+          if (result && typeof result === 'object') {
+            const hasInfo = result.info && typeof result.info === 'object'
+            const hasTemplate = result.template && typeof result.template === 'string'
+            const hasTemplateId = result['template-id'] || result.template_id || result.templateId
+            const hasHost = result.host || result.target
+            
+            if (hasInfo || hasTemplate || hasTemplateId || hasHost) {
+              validResults++
+            }
+          }
         }
       }
     } catch (e) {
       samples.push({
-        lineNumber: i + 1,
+        itemNumber: 1,
         parsed: false,
         error: e.message,
-        content: line.substring(0, 200)
+        content: trimmedContent.substring(0, 200)
       })
+    }
+  } else {
+    // Fallback to JSONL format
+    format = 'jsonl'
+    const lines = content.split('\n').filter(line => line.trim())
+    totalItems = lines.length
+    
+    for (let i = 0; i < Math.min(lines.length, 5); i++) {
+      const line = lines[i]
+      try {
+        const result = JSON.parse(line)
+        samples.push({
+          lineNumber: i + 1,
+          parsed: true,
+          structure: Object.keys(result),
+          hasInfo: !!(result.info && typeof result.info === 'object'),
+          hasTemplate: !!(result.template && typeof result.template === 'string'),
+          hasTemplateId: !!(result['template-id'] || result.template_id || result.templateId),
+          hasHost: !!(result.host || result.target),
+          severity: result.info?.severity || result.severity,
+          templateName: result.info?.name || result.template_name || result.templateName,
+          target: result.host || result.target || result.url,
+          sample: JSON.stringify(result, null, 2).substring(0, 500)
+        })
+        
+        if (result && typeof result === 'object') {
+          const hasInfo = result.info && typeof result.info === 'object'
+          const hasTemplate = result.template && typeof result.template === 'string'
+          const hasTemplateId = result['template-id'] || result.template_id || result.templateId
+          const hasHost = result.host || result.target
+          
+          if (hasInfo || hasTemplate || hasTemplateId || hasHost) {
+            validResults++
+          }
+        }
+      } catch (e) {
+        samples.push({
+          lineNumber: i + 1,
+          parsed: false,
+          error: e.message,
+          content: line.substring(0, 200)
+        })
+      }
     }
   }
   
   return {
     summary: {
-      totalLines: lines.length,
+      format,
+      totalItems,
       validResults,
-      sampledLines: samples.length
+      sampledItems: samples.length
     },
     samples
   }
