@@ -70,18 +70,37 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    // Find the scan record
-    const scanKeyParts = scanKey.split('/')
-    const fileName = scanKeyParts[scanKeyParts.length - 1]
+    // Find the scan record - try multiple approaches
+    let scanRecord = null
     
-    const [scanRecord] = await db
+    // First try to find by exact filePath match
+    const [exactMatch] = await db
       .select()
       .from(scans)
       .where(and(
         eq(scans.tenantId, tenant.id),
-        eq(scans.fileName, fileName)
+        eq(scans.filePath, scanKey)
       ))
       .limit(1)
+    
+    if (exactMatch) {
+      scanRecord = exactMatch
+    } else {
+      // If not found, try by fileName (extract from scanKey)
+      const scanKeyParts = scanKey.split('/')
+      const fileName = scanKeyParts[scanKeyParts.length - 1]
+      
+      const [fileNameMatch] = await db
+        .select()
+        .from(scans)
+        .where(and(
+          eq(scans.tenantId, tenant.id),
+          eq(scans.fileName, fileName)
+        ))
+        .limit(1)
+      
+      scanRecord = fileNameMatch
+    }
 
     if (!scanRecord) {
       console.log(`🔄 REPROCESS: Scan record not found for key: ${scanKey}`)

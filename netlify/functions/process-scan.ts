@@ -113,7 +113,7 @@ export const handler: Handler = async (event, context) => {
     let scanFileKey: string = scanKey
 
     if (scanId) {
-      // Get scan record from database
+      // Get scan record from database using scanId
       const [dbScan] = await db
         .select()
         .from(scans)
@@ -124,12 +124,48 @@ export const handler: Handler = async (event, context) => {
         return {
           statusCode: 404,
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ error: 'Scan not found' })
+          body: JSON.stringify({ error: 'Scan not found by scanId' })
         }
       }
       
       scanRecord = dbScan
       scanFileKey = dbScan.filePath
+      console.log(`🔍 PROCESS: Found scan record by ID: ${scanRecord.fileName}, companyId: ${scanRecord.companyId}`)
+    } else if (scanKey) {
+      // Try to find scan record by scanKey (filePath or fileName)
+      const [exactMatch] = await db
+        .select()
+        .from(scans)
+        .where(and(
+          eq(scans.tenantId, tenant.id),
+          eq(scans.filePath, scanKey)
+        ))
+        .limit(1)
+      
+      if (exactMatch) {
+        scanRecord = exactMatch
+        console.log(`🔍 PROCESS: Found scan record by filePath: ${scanRecord.fileName}, companyId: ${scanRecord.companyId}`)
+      } else {
+        // Try by fileName
+        const fileName = scanKey.split('/').pop()
+        const [fileNameMatch] = await db
+          .select()
+          .from(scans)
+          .where(and(
+            eq(scans.tenantId, tenant.id),
+            eq(scans.fileName, fileName)
+          ))
+          .limit(1)
+        
+        if (fileNameMatch) {
+          scanRecord = fileNameMatch
+          console.log(`🔍 PROCESS: Found scan record by fileName: ${scanRecord.fileName}, companyId: ${scanRecord.companyId}`)
+        } else {
+          console.log(`🔍 PROCESS: No scan record found for scanKey: ${scanKey} or fileName: ${fileName}`)
+        }
+      }
+      
+      scanFileKey = scanKey
     }
 
     // Get scan file content from blob storage
@@ -213,15 +249,21 @@ export const handler: Handler = async (event, context) => {
 
         if (!processedAssets.has(assetKey)) {
           // Insert or get existing asset
+          const assetWhereConditions = [
+            eq(assets.tenantId, tenant.id),
+            hostname ? eq(assets.hostname, hostname) : eq(assets.hostname, null),
+            ip ? eq(assets.ip, ip) : eq(assets.ip, null)
+          ]
+          
+          // Only add company condition if we have a company
+          if (scanRecord?.companyId) {
+            assetWhereConditions.push(eq(assets.companyId, scanRecord.companyId))
+          }
+          
           const [existingAsset] = await db
             .select()
             .from(assets)
-            .where(and(
-              eq(assets.tenantId, tenant.id),
-              eq(assets.companyId, scanRecord?.companyId || ''),
-              hostname ? eq(assets.hostname, hostname) : eq(assets.hostname, null),
-              ip ? eq(assets.ip, ip) : eq(assets.ip, null)
-            ))
+            .where(and(...assetWhereConditions))
             .limit(1)
 
           if (existingAsset) {
