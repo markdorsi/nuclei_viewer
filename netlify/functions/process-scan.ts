@@ -22,8 +22,60 @@ function getTenantFromPath(event: any) {
 // Parse nuclei JSON/JSONL results
 function parseNucleiResults(content: string): any[] {
   const results = []
-  const lines = content.split('\n').filter(line => line.trim())
+  const trimmedContent = content.trim()
   
+  console.log(`🔍 PARSE: Processing scan file (${content.length} characters)`)
+  console.log(`🔍 PARSE: First 100 characters:`, trimmedContent.substring(0, 100))
+  
+  // Check if it's a JSON array format (starts with '[')
+  if (trimmedContent.startsWith('[') && trimmedContent.endsWith(']')) {
+    console.log(`🔍 PARSE: Detected JSON array format`)
+    try {
+      const jsonArray = JSON.parse(trimmedContent)
+      if (Array.isArray(jsonArray)) {
+        console.log(`🔍 PARSE: Successfully parsed JSON array with ${jsonArray.length} items`)
+        
+        for (let i = 0; i < jsonArray.length; i++) {
+          const result = jsonArray[i]
+          
+          // Log the structure of the first few results for debugging
+          if (i < 3) {
+            console.log(`🔍 PARSE: Item ${i + 1} structure:`, JSON.stringify(result, null, 2).substring(0, 500))
+          }
+          
+          if (result && typeof result === 'object') {
+            // Check for various nuclei result patterns
+            const hasInfo = result.info && typeof result.info === 'object'
+            const hasTemplate = result.template && typeof result.template === 'string'
+            const hasTemplateId = result['template-id'] || result.template_id || result.templateId
+            const hasHost = result.host || result.target
+            const hasMatched = result.matched_at || result.matchedAt
+            
+            if (hasInfo || hasTemplate || hasTemplateId || hasHost || hasMatched) {
+              results.push(result)
+              if (i < 3) {
+                console.log(`✅ PARSE: Accepted item ${i + 1} as valid nuclei result`)
+              }
+            } else {
+              if (i < 3) {
+                console.log(`❌ PARSE: Rejected item ${i + 1} - doesn't match nuclei patterns`)
+                console.log(`❌ PARSE: Item keys:`, Object.keys(result))
+              }
+            }
+          }
+        }
+        
+        console.log(`🔍 PARSE: Found ${results.length} valid nuclei results out of ${jsonArray.length} items in JSON array`)
+        return results
+      }
+    } catch (e) {
+      console.log(`⚠️ PARSE: Failed to parse as JSON array:`, e.message)
+    }
+  }
+  
+  // Fallback to JSONL format (one JSON object per line)
+  console.log(`🔍 PARSE: Falling back to JSONL format parsing`)
+  const lines = content.split('\n').filter(line => line.trim())
   console.log(`🔍 PARSE: Processing ${lines.length} lines from scan file`)
   
   for (let i = 0; i < lines.length; i++) {
@@ -41,7 +93,7 @@ function parseNucleiResults(content: string): any[] {
         // Check for various nuclei result patterns
         const hasInfo = result.info && typeof result.info === 'object'
         const hasTemplate = result.template && typeof result.template === 'string'
-        const hasTemplateId = result.template_id || result.templateId || result['template-id']
+        const hasTemplateId = result['template-id'] || result.template_id || result.templateId
         const hasHost = result.host || result.target
         const hasMatched = result.matched_at || result.matchedAt
         
