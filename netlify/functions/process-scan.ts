@@ -144,7 +144,17 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    const scanContent = await scanBlob.text()
+    // Handle different blob response types
+    let scanContent: string
+    if (typeof scanBlob === 'string') {
+      scanContent = scanBlob
+    } else if (scanBlob && typeof scanBlob.text === 'function') {
+      scanContent = await scanBlob.text()
+    } else if (scanBlob && typeof scanBlob.toString === 'function') {
+      scanContent = scanBlob.toString()
+    } else {
+      scanContent = String(scanBlob)
+    }
     console.log(`Processing scan file with ${scanContent.length} characters`)
 
     // Parse nuclei results
