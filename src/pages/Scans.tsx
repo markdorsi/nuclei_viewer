@@ -883,7 +883,7 @@ export default function Scans() {
                                   {formatFileSize(scan.size)} • {formatDate(scan.uploadedAt)}
                                 </p>
                                 {!isBeingDeleted && renderProcessingStatus(scan)}
-                                {!isBeingDeleted && scan.processingStatus === 'completed' && scan.companyId && (
+                                {!isBeingDeleted && (scan.processingStatus === 'completed' || scan.processingStatus === 'failed') && scan.companyId && (
                                   <button
                                     onClick={() => reprocessMutation.mutate(scan.key)}
                                     disabled={reprocessMutation.isPending}
