@@ -56,7 +56,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
   try {
     const body = JSON.parse(event.body || '{}')
-    const { scanName, contentType, fileSize, overallSha256 } = body
+    const { scanName, contentType, fileSize, overallSha256, companyId } = body
 
     if (!scanName || !fileSize) {
       return {
@@ -106,7 +106,8 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       overallSha256: overallSha256 || null,
       originalName: scanName,
       createdAt: new Date().toISOString(),
-      chunks: []
+      chunks: [],
+      companyId: companyId || null
     }
 
     await sessionsStore.set(`${uploadId}.json`, JSON.stringify(sessionData))

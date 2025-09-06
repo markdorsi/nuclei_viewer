@@ -55,10 +55,10 @@ export const handler: Handler = async (event, context) => {
     const body = JSON.parse(event.body || '{}')
     const { scanKey, companyId } = body
 
-    if (!scanKey || !companyId) {
+    if (!scanKey) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ error: 'scanKey and companyId are required' })
+        body: JSON.stringify({ error: 'scanKey is required' })
       }
     }
 
@@ -78,18 +78,22 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    // Verify company belongs to tenant
-    const [company] = await db
-      .select()
-      .from(companies)
-      .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenant.id)))
-      .limit(1)
+    // Verify company belongs to tenant (if companyId is provided)
+    let company = null
+    if (companyId && companyId !== '') {
+      const [foundCompany] = await db
+        .select()
+        .from(companies)
+        .where(and(eq(companies.id, companyId), eq(companies.tenantId, tenant.id)))
+        .limit(1)
 
-    if (!company) {
-      return {
-        statusCode: 404,
-        body: JSON.stringify({ error: 'Company not found' })
+      if (!foundCompany) {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({ error: 'Company not found' })
+        }
       }
+      company = foundCompany
     }
 
     // Get the scan metadata from blob storage
@@ -108,26 +112,26 @@ export const handler: Handler = async (event, context) => {
 
     // Parse and update metadata
     const metadata = JSON.parse(metadataText)
-    metadata.companyId = companyId
-    metadata.companyName = company.name
+    metadata.companyId = companyId && companyId !== '' ? companyId : null
+    metadata.companyName = company ? company.name : null
     metadata.updatedAt = new Date().toISOString()
 
     // Save updated metadata back to blob storage
     await metaStore.set(metadataKey, JSON.stringify(metadata))
 
-    console.log(`✅ Updated scan metadata: ${scanKey} -> ${company.name}`)
+    console.log(`✅ Updated scan metadata: ${scanKey} -> ${company ? company.name : 'No Company'}`)
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        message: 'Scan successfully associated with company',
+        message: company ? 'Scan successfully associated with company' : 'Scan association removed',
         scanKey,
-        company: {
+        company: company ? {
           id: company.id,
           name: company.name,
           slug: company.slug
-        }
+        } : null
       })
     }
 

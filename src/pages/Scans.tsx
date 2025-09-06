@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon, BuildingOfficeIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
+import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon, BuildingOfficeIcon, ChevronDownIcon, PlusIcon } from "@heroicons/react/24/outline";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB max
 const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
@@ -25,6 +25,10 @@ export default function Scans() {
   const [maxPollingAttempts, setMaxPollingAttempts] = useState(0);
   const [showCompanySelector, setShowCompanySelector] = useState<string | null>(null);
   const [isAssociating, setIsAssociating] = useState(false);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+  const [showNewCompanyInput, setShowNewCompanyInput] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [isCreatingCompany, setIsCreatingCompany] = useState(false);
   
   const uploadIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -150,7 +154,8 @@ export default function Scans() {
         body: JSON.stringify({
           scanName: scanName || selectedFile.name,
           contentType: selectedFile.type || "application/octet-stream",
-          fileSize: selectedFile.size
+          fileSize: selectedFile.size,
+          companyId: selectedCompanyId || null
         }),
       });
 
@@ -366,6 +371,45 @@ export default function Scans() {
     setSelectedScans(new Set());
   };
 
+  const createNewCompany = async () => {
+    if (!newCompanyName.trim()) return;
+
+    setIsCreatingCompany(true);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/t/${tenant?.slug}/companies`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: newCompanyName.trim() })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to create company');
+      }
+
+      const newCompany = await response.json();
+      
+      // Refresh companies list
+      await queryClient.invalidateQueries({ queryKey: ["companies", tenant?.slug] });
+      
+      // Select the newly created company
+      setSelectedCompanyId(newCompany.id);
+      setNewCompanyName('');
+      setShowNewCompanyInput(false);
+
+    } catch (err: any) {
+      console.error('Company creation error:', err);
+      setError(err.message || "Failed to create company");
+    } finally {
+      setIsCreatingCompany(false);
+    }
+  };
+
   const associateScanWithCompany = async (scanKey: string, companyId: string) => {
     setIsAssociating(true);
     setError("");
@@ -461,6 +505,84 @@ export default function Scans() {
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm disabled:opacity-50"
               placeholder="nuclei-2024-09-05.jsonl"
             />
+          </div>
+
+          {/* Company Selection */}
+          <div className="mb-4">
+            <label htmlFor="company" className="block text-sm font-medium text-gray-700">
+              Company (Optional)
+            </label>
+            <div className="mt-1 space-y-2">
+              <select
+                id="company"
+                value={selectedCompanyId}
+                onChange={(e) => setSelectedCompanyId(e.target.value)}
+                disabled={uploadStatus === 'uploading'}
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="">No Company</option>
+                {companies?.map((company: any) => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
+                  </option>
+                ))}
+              </select>
+              
+              {!showNewCompanyInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowNewCompanyInput(true)}
+                  disabled={uploadStatus === 'uploading'}
+                  className="inline-flex items-center space-x-1 text-xs text-indigo-600 hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded disabled:opacity-50"
+                >
+                  <PlusIcon className="h-3 w-3" />
+                  <span>Create New Company</span>
+                </button>
+              ) : (
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={newCompanyName}
+                    onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="Enter company name"
+                    disabled={uploadStatus === 'uploading' || isCreatingCompany}
+                    className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm disabled:opacity-50"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        createNewCompany();
+                      } else if (e.key === 'Escape') {
+                        setShowNewCompanyInput(false);
+                        setNewCompanyName('');
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={createNewCompany}
+                    disabled={!newCompanyName.trim() || uploadStatus === 'uploading' || isCreatingCompany}
+                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isCreatingCompany ? (
+                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                    ) : (
+                      'Create'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewCompanyInput(false);
+                      setNewCompanyName('');
+                    }}
+                    disabled={uploadStatus === 'uploading' || isCreatingCompany}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* File Input */}
