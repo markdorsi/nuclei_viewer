@@ -111,8 +111,74 @@ export const handler: Handler = async (event, context) => {
     for (const company of companiesList) {
       console.log('🟡 REPORTS: Processing company:', company.name)
       
-      // Get findings for this company
-      const companyFindings = await db
+      try {
+        // Get findings for this company
+        const companyFindings = await db
+          .select({
+            id: findings.id,
+            severity: findings.severity,
+            detectedAt: findings.detectedAt,
+            triagedAt: findings.triagedAt,
+            prioritizedAt: findings.prioritizedAt,
+            remediatedAt: findings.remediatedAt,
+            validatedAt: findings.validatedAt,
+            closedAt: findings.closedAt,
+            slaTargetDays: findings.slaTargetDays,
+            slaDueDate: findings.slaDueDate,
+            slaStatus: findings.slaStatus,
+            currentStatus: findings.currentStatus
+          })
+          .from(findings)
+          .where(and(
+            eq(findings.tenantId, tenant.id),
+            eq(findings.companyId, company.id),
+            ...(startDate ? [gte(findings.detectedAt, new Date(startDate))] : []),
+            ...(endDate ? [lte(findings.detectedAt, new Date(endDate))] : [])
+          ))
+
+        console.log('🟡 REPORTS: Found findings for company:', companyFindings.length)
+
+        if (companyFindings.length === 0) {
+          // Add company with empty KPIs even if no findings
+          const emptyKpis = calculateKPIs([])
+          companyKPIs.push({
+            companyId: company.id,
+            companyName: company.name,
+            companySlug: company.slug,
+            kpis: emptyKpis
+          })
+          continue
+        }
+
+        // Calculate KPIs
+        const kpis = calculateKPIs(companyFindings)
+        
+        companyKPIs.push({
+          companyId: company.id,
+          companyName: company.name,
+          companySlug: company.slug,
+          kpis
+        })
+      } catch (findingsError) {
+        console.error('🔴 REPORTS: Error fetching findings for company:', company.name, findingsError)
+        // Add company with empty KPIs on error
+        const emptyKpis = calculateKPIs([])
+        companyKPIs.push({
+          companyId: company.id,
+          companyName: company.name,
+          companySlug: company.slug,
+          kpis: emptyKpis
+        })
+      }
+    }
+
+    // Get overall tenant-level KPIs
+    console.log('🟡 REPORTS: Fetching all findings for tenant')
+    let allFindings = []
+    let overallKPIs = calculateKPIs([])
+    
+    try {
+      allFindings = await db
         .select({
           id: findings.id,
           severity: findings.severity,
@@ -130,54 +196,17 @@ export const handler: Handler = async (event, context) => {
         .from(findings)
         .where(and(
           eq(findings.tenantId, tenant.id),
-          eq(findings.companyId, company.id),
           ...(startDate ? [gte(findings.detectedAt, new Date(startDate))] : []),
-          ...(endDate ? [lte(findings.detectedAt, new Date(endDate))] : [])
+          ...(endDate ? [lte(findings.detectedAt, new Date(endDate))] : []),
+          ...(companyId ? [eq(findings.companyId, companyId)] : [])
         ))
 
-      console.log('🟡 REPORTS: Found findings for company:', companyFindings.length)
-
-      if (companyFindings.length === 0) continue
-
-      // Calculate KPIs
-      const kpis = calculateKPIs(companyFindings)
-      
-      companyKPIs.push({
-        companyId: company.id,
-        companyName: company.name,
-        companySlug: company.slug,
-        kpis
-      })
+      console.log('🟡 REPORTS: Total findings found:', allFindings.length)
+      overallKPIs = calculateKPIs(allFindings)
+    } catch (overallError) {
+      console.error('🔴 REPORTS: Error fetching overall findings:', overallError)
+      // Use empty KPIs on error
     }
-
-    // Get overall tenant-level KPIs
-    console.log('🟡 REPORTS: Fetching all findings for tenant')
-    const allFindings = await db
-      .select({
-        id: findings.id,
-        severity: findings.severity,
-        detectedAt: findings.detectedAt,
-        triagedAt: findings.triagedAt,
-        prioritizedAt: findings.prioritizedAt,
-        remediatedAt: findings.remediatedAt,
-        validatedAt: findings.validatedAt,
-        closedAt: findings.closedAt,
-        slaTargetDays: findings.slaTargetDays,
-        slaDueDate: findings.slaDueDate,
-        slaStatus: findings.slaStatus,
-        currentStatus: findings.currentStatus
-      })
-      .from(findings)
-      .where(and(
-        eq(findings.tenantId, tenant.id),
-        ...(startDate ? [gte(findings.detectedAt, new Date(startDate))] : []),
-        ...(endDate ? [lte(findings.detectedAt, new Date(endDate))] : []),
-        ...(companyId ? [eq(findings.companyId, companyId)] : [])
-      ))
-
-    console.log('🟡 REPORTS: Total findings found:', allFindings.length)
-
-    const overallKPIs = calculateKPIs(allFindings)
 
     // Get simplified trend data
     const trendData = await getTrendData(tenant.id, companyId)

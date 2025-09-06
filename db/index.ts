@@ -6,15 +6,23 @@ import * as dotenv from 'dotenv'
 dotenv.config()
 
 if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL environment variable is missing')
   throw new Error('DATABASE_URL environment variable is required')
 }
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: true, // Neon requires SSL
+  ssl: {
+    rejectUnauthorized: false // Allow self-signed certificates for Neon
+  },
   max: 1, // Serverless functions work better with fewer connections
   idleTimeoutMillis: 0,
   connectionTimeoutMillis: 10000
+})
+
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('Unexpected database pool error:', err)
 })
 
 export const db = drizzle(pool, { schema })
