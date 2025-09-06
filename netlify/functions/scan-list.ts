@@ -189,12 +189,15 @@ export const handler: Handler = async (event, context) => {
             item.processingStatus = scanInfo.status
             item.scanId = scanInfo.scanId
             item.processedAt = scanInfo.processedAt
+            console.log(`📊 SCAN LIST: ${item.key} -> status: ${scanInfo.status}, processedAt: ${scanInfo.processedAt}`)
           } else if (item.companyId) {
             // If scan has company but no DB record, it means processing hasn't started
             item.processingStatus = 'pending'
+            console.log(`📊 SCAN LIST: ${item.key} -> status: pending (no DB record but has company)`)
           } else {
             // No company association - no processing expected
             item.processingStatus = null
+            console.log(`📊 SCAN LIST: ${item.key} -> status: null (no company association)`)
           }
         })
       }
@@ -207,7 +210,12 @@ export const handler: Handler = async (event, context) => {
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      },
       body: JSON.stringify(items)
     }
 
