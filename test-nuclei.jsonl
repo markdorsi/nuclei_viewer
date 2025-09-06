@@ -1,0 +1,1 @@
+{"info":{"name":"Test Finding","severity":"medium","description":"Test description","tags":["test"]},"host":"https://example.com","matcher":{"name":"test-matcher"}}
