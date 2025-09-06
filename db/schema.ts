@@ -49,6 +49,24 @@ export const companies = nucleiDb.table('companies', {
   tenantIdx: index().on(table.tenantId)
 }))
 
+export const scans = nucleiDb.table('scans', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  scanType: text('scan_type').notNull(),
+  fileName: text('file_name').notNull(),
+  filePath: text('file_path').notNull(),
+  scanDate: timestamp('scan_date').notNull(),
+  status: text('status', { enum: ['pending', 'processing', 'completed', 'failed'] }).notNull().default('pending'),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  processedAt: timestamp('processed_at')
+}, (table) => ({
+  tenantIdx: index().on(table.tenantId),
+  companyIdx: index().on(table.companyId),
+  statusIdx: index().on(table.status)
+}))
+
 
 export const assets = nucleiDb.table('assets', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -70,6 +88,7 @@ export const findings = nucleiDb.table('findings', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   companyId: uuid('company_id').notNull().references(() => companies.id),
+  scanId: uuid('scan_id').notNull().references(() => scans.id),
   assetId: uuid('asset_id').references(() => assets.id),
   dedupeKey: text('dedupe_key').notNull(),
   templateId: text('template_id'),
@@ -104,6 +123,7 @@ export const findings = nucleiDb.table('findings', {
   unique: unique().on(table.tenantId, table.companyId, table.dedupeKey),
   tenantIdx: index().on(table.tenantId),
   companyIdx: index().on(table.companyId),
+  scanIdx: index().on(table.scanId),
   severityIdx: index().on(table.severity),
   dedupeIdx: index().on(table.dedupeKey)
 }))
@@ -112,6 +132,7 @@ export const ports = nucleiDb.table('ports', {
   id: uuid('id').defaultRandom().primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   companyId: uuid('company_id').notNull().references(() => companies.id),
+  scanId: uuid('scan_id').notNull().references(() => scans.id),
   assetId: uuid('asset_id').notNull().references(() => assets.id),
   port: integer('port').notNull(),
   protocol: text('protocol', { enum: ['tcp', 'udp'] }).notNull(),
@@ -196,6 +217,7 @@ export const auditLogs = nucleiDb.table('audit_logs', {
 export const tenantsRelations = relations(tenants, ({ many }) => ({
   memberships: many(memberships),
   companies: many(companies),
+  scans: many(scans),
   findings: many(findings),
   tenantIntegrations: many(tenantIntegrations),
   auditLogs: many(auditLogs)
@@ -223,8 +245,22 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
     fields: [companies.tenantId],
     references: [tenants.id]
   }),
+  scans: many(scans),
   assets: many(assets),
   findings: many(findings)
+}))
+
+export const scansRelations = relations(scans, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [scans.tenantId],
+    references: [tenants.id]
+  }),
+  company: one(companies, {
+    fields: [scans.companyId],
+    references: [companies.id]
+  }),
+  findings: many(findings),
+  ports: many(ports)
 }))
 
 
@@ -236,6 +272,10 @@ export const findingsRelations = relations(findings, ({ one, many }) => ({
   company: one(companies, {
     fields: [findings.companyId],
     references: [companies.id]
+  }),
+  scan: one(scans, {
+    fields: [findings.scanId],
+    references: [scans.id]
   }),
   asset: one(assets, {
     fields: [findings.assetId],

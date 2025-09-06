@@ -1,7 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon, BuildingOfficeIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB max
 const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
@@ -23,6 +23,8 @@ export default function Scans() {
   const [isProcessingUpload, setIsProcessingUpload] = useState(false);
   const [pollingAttempt, setPollingAttempt] = useState(0);
   const [maxPollingAttempts, setMaxPollingAttempts] = useState(0);
+  const [showCompanySelector, setShowCompanySelector] = useState<string | null>(null);
+  const [isAssociating, setIsAssociating] = useState(false);
   
   const uploadIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -62,8 +64,36 @@ export default function Scans() {
     },
     enabled: !!token && !!tenant?.slug
   })
+
+  const { data: companies } = useQuery({
+    queryKey: ['companies', tenant?.slug],
+    queryFn: async () => {
+      const res = await fetch(`/api/t/${tenant?.slug}/companies`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      if (!res.ok) throw new Error('Failed to fetch companies')
+      return res.json()
+    },
+    enabled: !!token && !!tenant?.slug
+  })
   
   console.log('📊 Query state - Loading:', isLoadingScans, 'Data count:', scans?.length)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (showCompanySelector) {
+        setShowCompanySelector(null);
+      }
+    };
+    
+    if (showCompanySelector) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showCompanySelector]);
 
   const calculateChunks = (fileSize: number, chunkSize: number) => {
     return Math.ceil(fileSize / chunkSize);
@@ -334,6 +364,37 @@ export default function Scans() {
 
   const clearSelection = () => {
     setSelectedScans(new Set());
+  };
+
+  const associateScanWithCompany = async (scanKey: string, companyId: string) => {
+    setIsAssociating(true);
+    setError("");
+    
+    try {
+      const response = await fetch(`/api/t/${tenant?.slug}/scans/associate`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ scanKey, companyId })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to associate scan with company');
+      }
+
+      // Refresh scans list to show updated associations
+      await queryClient.invalidateQueries({ queryKey: ["scans", tenant?.slug] });
+      setShowCompanySelector(null);
+      
+    } catch (err: any) {
+      console.error('Association error:', err);
+      setError(err.message || "Failed to associate scan with company");
+    } finally {
+      setIsAssociating(false);
+    }
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -609,12 +670,60 @@ export default function Scans() {
                         )}
                         
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center">
-                            <p className={`text-sm font-medium truncate ${isBeingDeleted ? 'text-red-600 line-through' : 'text-gray-900'}`}>
-                              {scan.key.split('/').pop()}
-                            </p>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className={`text-sm font-medium truncate ${isBeingDeleted ? 'text-red-600 line-through' : 'text-gray-900'}`}>
+                                {scan.key.split('/').pop()}
+                              </p>
+                              <div className="flex items-center space-x-4">
+                                <p className={`text-sm ${isBeingDeleted ? 'text-red-400' : 'text-gray-500'}`}>
+                                  {formatFileSize(scan.size)} • {formatDate(scan.uploadedAt)}
+                                </p>
+                                {!isBeingDeleted && (
+                                  <div className="relative">
+                                    <button
+                                      onClick={() => setShowCompanySelector(showCompanySelector === scan.key ? null : scan.key)}
+                                      disabled={isAssociating}
+                                      className="inline-flex items-center space-x-1 text-xs text-indigo-600 hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 rounded disabled:opacity-50"
+                                    >
+                                      <BuildingOfficeIcon className="h-3 w-3" />
+                                      <span>{scan.companyName || 'No Company'}</span>
+                                      <ChevronDownIcon className="h-3 w-3" />
+                                    </button>
+                                    
+                                    {showCompanySelector === scan.key && (
+                                      <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10 max-h-40 overflow-y-auto">
+                                        <div className="p-1">
+                                          <button
+                                            onClick={() => associateScanWithCompany(scan.key, '')}
+                                            disabled={isAssociating}
+                                            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-gray-100 rounded disabled:opacity-50"
+                                          >
+                                            No Company
+                                          </button>
+                                          {companies?.map((company: any) => (
+                                            <button
+                                              key={company.id}
+                                              onClick={() => associateScanWithCompany(scan.key, company.id)}
+                                              disabled={isAssociating}
+                                              className={`w-full text-left px-3 py-2 text-xs rounded disabled:opacity-50 ${
+                                                scan.companyId === company.id 
+                                                  ? 'bg-indigo-100 text-indigo-900' 
+                                                  : 'text-gray-700 hover:bg-gray-100'
+                                              }`}
+                                            >
+                                              {company.name}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                             {isBeingDeleted && (
-                              <div className="ml-3 flex items-center">
+                              <div className="flex items-center ml-3">
                                 <ExclamationTriangleIcon className="h-4 w-4 text-red-500 mr-1" />
                                 <span className="text-xs text-red-600 font-medium bg-red-100 px-2 py-1 rounded-full">
                                   DELETING
@@ -622,9 +731,6 @@ export default function Scans() {
                               </div>
                             )}
                           </div>
-                          <p className={`text-sm ${isBeingDeleted ? 'text-red-400' : 'text-gray-500'}`}>
-                            {formatFileSize(scan.size)} • {formatDate(scan.uploadedAt)}
-                          </p>
                         </div>
                       </div>
                     </li>

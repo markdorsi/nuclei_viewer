@@ -96,7 +96,9 @@ export const handler: Handler = async (event, context) => {
         items.push({
           key: blob.key,
           size: metadata?.size || 0,
-          uploadedAt: metadata?.completedAt || new Date().toISOString()
+          uploadedAt: metadata?.completedAt || new Date().toISOString(),
+          companyId: metadata?.companyId || null,
+          companyName: metadata?.companyName || null
         })
       } catch (err) {
         console.error(`Error getting metadata for ${blob.key}:`, err)
@@ -104,7 +106,9 @@ export const handler: Handler = async (event, context) => {
         items.push({
           key: blob.key,
           size: 0,
-          uploadedAt: new Date().toISOString()
+          uploadedAt: new Date().toISOString(),
+          companyId: null,
+          companyName: null
         })
       }
     }
