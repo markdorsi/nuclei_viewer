@@ -400,15 +400,28 @@ export const handler: Handler = async (event, context) => {
 
         console.log(`🔍 PROCESS: Found - severity: ${severity}, template: ${templateName}, templateId: ${templateId}`)
 
+        // Validate required fields before inserting finding
+        if (!scanRecord?.companyId) {
+          console.log(`⚠️ PROCESS: Skipping finding - no company associated with scan`)
+          continue
+        }
+
+        if (!scanRecord?.id) {
+          console.log(`⚠️ PROCESS: Skipping finding - no scan ID found`)
+          continue
+        }
+
         // Insert finding
         console.log(`🔍 PROCESS: Inserting finding - severity: ${severity}, template: ${templateName}, target: ${target}`)
+        console.log(`🔍 PROCESS: Using companyId: ${scanRecord.companyId}, scanId: ${scanRecord.id}`)
+        
         try {
           await db
             .insert(findings)
             .values({
               tenantId: tenant.id,
-              companyId: scanRecord?.companyId || null,
-              scanId: scanRecord?.id || null,
+              companyId: scanRecord.companyId, // Now guaranteed to exist
+              scanId: scanRecord.id, // Now guaranteed to exist
               assetId,
               dedupeKey,
               templateId,
