@@ -56,7 +56,7 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
 
   try {
     const body = JSON.parse(event.body || '{}')
-    const { scanName, contentType, fileSize, overallSha256 } = body
+    const { scanName, contentType, fileSize, overallSha256, companyId, companyName } = body
 
     if (!scanName || !fileSize) {
       return {
@@ -105,6 +105,8 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       contentType: contentType || 'application/octet-stream',
       overallSha256: overallSha256 || null,
       originalName: scanName,
+      companyId: companyId || null,
+      companyName: companyName || null,
       createdAt: new Date().toISOString(),
       chunks: []
     }

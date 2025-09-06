@@ -144,6 +144,8 @@ export const handler: Handler = async (event, context) => {
       size: sessionData.receivedBytes,
       contentType: sessionData.contentType,
       originalName: sessionData.originalName,
+      companyId: sessionData.companyId || null,
+      companyName: sessionData.companyName || null,
       createdAt: sessionData.createdAt,
       completedAt: new Date().toISOString(),
       overallSha256: sessionData.overallSha256 || null,
