@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB max
 const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
@@ -19,6 +19,7 @@ export default function Scans() {
   const [totalChunks, setTotalChunks] = useState(0);
   const [selectedScans, setSelectedScans] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingScans, setDeletingScans] = useState<Set<string>>(new Set());
   const [isProcessingUpload, setIsProcessingUpload] = useState(false);
   const [pollingAttempt, setPollingAttempt] = useState(0);
   const [maxPollingAttempts, setMaxPollingAttempts] = useState(0);
@@ -271,6 +272,7 @@ export default function Scans() {
     
     const scanKeys = Array.from(selectedScans);
     setIsDeleting(true);
+    setDeletingScans(new Set(scanKeys));
     setError("");
     
     try {
@@ -310,6 +312,7 @@ export default function Scans() {
       setError(err.message || "Failed to delete scans");
     } finally {
       setIsDeleting(false);
+      setDeletingScans(new Set());
     }
   };
 
@@ -498,7 +501,7 @@ export default function Scans() {
             {uploadStatus !== 'uploading' && !isProcessingUpload ? (
               <button
                 onClick={startChunkedUpload}
-                disabled={!selectedFile || uploadStatus === 'uploading' || isProcessingUpload}
+                disabled={!selectedFile || isProcessingUpload}
                 className="inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CloudArrowUpIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
@@ -583,28 +586,50 @@ export default function Scans() {
           ) : scans?.length > 0 ? (
             <div className="overflow-hidden">
               <ul className="divide-y divide-gray-200">
-                {scans.map((scan: any, index: number) => (
-                  <li key={scan.key || index} className="py-3">
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedScans.has(scan.key)}
-                        onChange={() => toggleScanSelection(scan.key)}
-                        disabled={isDeleting}
-                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <DocumentIcon className="h-6 w-6 text-gray-400" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {scan.key.split('/').pop()}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {formatFileSize(scan.size)} • {formatDate(scan.uploadedAt)}
-                        </p>
+                {scans.map((scan: any, index: number) => {
+                  const isBeingDeleted = deletingScans.has(scan.key);
+                  return (
+                    <li key={scan.key || index} className={`py-3 transition-all duration-200 ${isBeingDeleted ? 'opacity-60 pointer-events-none bg-red-50' : ''}`}>
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedScans.has(scan.key)}
+                          onChange={() => toggleScanSelection(scan.key)}
+                          disabled={isDeleting || isBeingDeleted}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                        
+                        {isBeingDeleted ? (
+                          <div className="relative">
+                            <TrashIcon className="h-6 w-6 text-red-400 animate-pulse" />
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></div>
+                          </div>
+                        ) : (
+                          <DocumentIcon className="h-6 w-6 text-gray-400" />
+                        )}
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center">
+                            <p className={`text-sm font-medium truncate ${isBeingDeleted ? 'text-red-600 line-through' : 'text-gray-900'}`}>
+                              {scan.key.split('/').pop()}
+                            </p>
+                            {isBeingDeleted && (
+                              <div className="ml-3 flex items-center">
+                                <ExclamationTriangleIcon className="h-4 w-4 text-red-500 mr-1" />
+                                <span className="text-xs text-red-600 font-medium bg-red-100 px-2 py-1 rounded-full">
+                                  DELETING
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className={`text-sm ${isBeingDeleted ? 'text-red-400' : 'text-gray-500'}`}>
+                            {formatFileSize(scan.size)} • {formatDate(scan.uploadedAt)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ) : (
