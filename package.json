@@ -10,6 +10,7 @@
     "build": "npm run build:ui",
     "build:ui": "vite build",
     "build:functions": "netlify functions:build --src netlify/functions",
+    "deploy": "naxp deploy prod",
     "preview": "vite preview",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
