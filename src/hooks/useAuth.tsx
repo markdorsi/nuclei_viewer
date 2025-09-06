@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const login = () => {
-    window.location.href = '/login.html'
+    navigate('/login')
   }
 
   const logout = async () => {
