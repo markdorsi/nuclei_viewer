@@ -61,8 +61,18 @@ export const handler: Handler = async (event, context) => {
     console.log('TEST: Scan record found:', {
       id: scanRecord.id,
       companyId: scanRecord.companyId,
-      fileName: scanRecord.fileName
+      fileName: scanRecord.fileName,
+      tenantId: scanRecord.tenantId,
+      status: scanRecord.status
     })
+
+    // Verify the scan record references are valid
+    const [tenantCheck] = await db.select().from(tenants).where(eq(tenants.id, scanRecord.tenantId)).limit(1)
+    console.log('TEST: Tenant exists:', !!tenantCheck)
+    
+    // Check if there are any existing findings for this scan
+    const existingFindings = await db.select().from(findings).where(eq(findings.scanId, scanRecord.id)).limit(5)
+    console.log('TEST: Existing findings count:', existingFindings.length)
 
     // Validate required fields
     if (!scanRecord.companyId) {
