@@ -499,15 +499,33 @@ export const handler: Handler = async (event, context) => {
           console.log(`✅ PROCESS: Finding inserted successfully. Total findings: ${findingsInserted}`)
         } catch (insertError) {
           console.error('❌ PROCESS: Failed to insert finding:', insertError)
-          console.error('❌ PROCESS: Finding data:', {
+          console.error('❌ PROCESS: Error details:', {
+            message: insertError.message,
+            stack: insertError.stack?.substring(0, 500),
+            constraint: insertError.constraint,
+            code: insertError.code,
+            detail: insertError.detail
+          })
+          console.error('❌ PROCESS: Full finding data that failed:', {
             tenantId: tenant.id,
             companyId: scanRecord?.companyId,
             scanId: scanRecord?.id,
             assetId,
+            dedupeKey,
+            templateId,
+            templateName,
             severity,
-            templateName: result.info?.name || result.template
+            name: templateName || 'Unknown Finding',
+            target,
+            host: result.host,
+            port: result.port,
+            hasInfo: !!result.info,
+            infoKeys: result.info ? Object.keys(result.info) : []
           })
-          throw insertError
+          console.error('❌ PROCESS: Raw nuclei result:', JSON.stringify(result, null, 2))
+          
+          // Don't throw - continue processing other findings
+          // throw insertError
         }
       } catch (error) {
         console.error('Error processing finding:', error)
