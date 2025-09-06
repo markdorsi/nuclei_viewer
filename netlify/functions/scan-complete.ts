@@ -218,7 +218,11 @@ export const handler: Handler = async (event, context) => {
               .where(eq(scans.id, scanId))
 
             // Trigger automatic processing (fire-and-forget)
-            fetch(`/api/t/${sessionData.tenantSlug}/scans/process`, {
+            // Construct the full URL for internal function call
+            const baseUrl = process.env.URL || `https://${process.env.SITE_NAME || 'scanvault'}.netlify.app`
+            const processUrl = `${baseUrl}/api/t/${sessionData.tenantSlug}/scans/process`
+            
+            fetch(processUrl, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json'
