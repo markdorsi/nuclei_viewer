@@ -272,6 +272,14 @@ export const handler: Handler = async (event, context) => {
     }
     console.log(`Processing scan file with ${scanContent.length} characters`)
 
+    // Debug: Log scan record details before processing
+    console.log('🔍 PROCESS: Scan record details:', {
+      scanRecordExists: !!scanRecord,
+      scanRecordId: scanRecord?.id,
+      scanRecordCompanyId: scanRecord?.companyId,
+      scanRecordFileName: scanRecord?.fileName
+    })
+
     // Parse nuclei results
     const nucleiResults = parseNucleiResults(scanContent)
     console.log(`Parsed ${nucleiResults.length} nuclei results`)
