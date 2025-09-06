@@ -81,7 +81,17 @@ export const handler: Handler = async (event, context) => {
 
   try {
     console.log('🟡 REPORTS: Starting reports generation for tenant:', tenantSlug)
+    console.log('🟡 REPORTS: Database URL exists:', !!process.env.DATABASE_URL)
     console.log('🟡 REPORTS: Fetching companies for tenant:', tenant.id)
+    
+    // Test basic database connectivity first
+    try {
+      const testQuery = await db.select({ count: sql<number>`COUNT(*)` }).from(tenants).limit(1)
+      console.log('🟡 REPORTS: Database connection test passed:', testQuery)
+    } catch (dbError) {
+      console.error('🔴 REPORTS: Database connection failed:', dbError)
+      throw dbError
+    }
     
     // Get all companies for this tenant
     const companiesList = await db
