@@ -150,7 +150,9 @@ export const handler: Handler = async (event, context) => {
       chunks: sessionData.chunks.length,
       uploadId: uploadId,
       userId: null, // User info not available in tenant-aware routing
-      email: null
+      email: null,
+      companyId: sessionData.companyId || null,
+      companyName: null // Will be populated by scan-list when needed
     }
     
     await metaStore.set(metadataKey, JSON.stringify(metadata))
