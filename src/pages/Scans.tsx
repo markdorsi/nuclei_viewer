@@ -69,7 +69,10 @@ export default function Scans() {
     enabled: !!token && !!tenant?.slug,
     refetchInterval: (data) => {
       // Auto-refresh every 5 seconds if there are processing scans
-      const hasProcessingScans = data?.some((scan: any) => 
+      if (!data || !Array.isArray(data)) {
+        return false
+      }
+      const hasProcessingScans = data.some((scan: any) => 
         scan.processingStatus === 'processing' || scan.processingStatus === 'pending'
       )
       return hasProcessingScans ? 5000 : false
