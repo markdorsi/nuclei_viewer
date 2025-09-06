@@ -30,6 +30,9 @@ function parseNucleiResults(content: string): any[] {
   // Check if it's a JSON array format (starts with '[')
   if (trimmedContent.startsWith('[') && trimmedContent.endsWith(']')) {
     console.log(`🔍 PARSE: Detected JSON array format`)
+    console.log(`🔍 PARSE: Content starts with: "${trimmedContent.substring(0, 100)}..."`)
+    console.log(`🔍 PARSE: Content ends with: "...${trimmedContent.substring(trimmedContent.length - 100)}"`)
+    
     try {
       const jsonArray = JSON.parse(trimmedContent)
       if (Array.isArray(jsonArray)) {
@@ -39,8 +42,9 @@ function parseNucleiResults(content: string): any[] {
           const result = jsonArray[i]
           
           // Log the structure of the first few results for debugging
-          if (i < 3) {
-            console.log(`🔍 PARSE: Item ${i + 1} structure:`, JSON.stringify(result, null, 2).substring(0, 500))
+          if (i < 5) {
+            console.log(`🔍 PARSE: Item ${i + 1} structure:`, JSON.stringify(result, null, 2).substring(0, 800))
+            console.log(`🔍 PARSE: Item ${i + 1} keys:`, Object.keys(result))
           }
           
           if (result && typeof result === 'object') {
@@ -51,15 +55,25 @@ function parseNucleiResults(content: string): any[] {
             const hasHost = result.host || result.target
             const hasMatched = result.matched_at || result.matchedAt
             
+            console.log(`🔍 PARSE: Item ${i + 1} validation:`, {
+              hasInfo,
+              hasTemplate,
+              hasTemplateId: !!hasTemplateId,
+              hasHost: !!hasHost,
+              hasMatched: !!hasMatched,
+              templateIdValue: hasTemplateId,
+              hostValue: result.host || result.target
+            })
+            
             if (hasInfo || hasTemplate || hasTemplateId || hasHost || hasMatched) {
               results.push(result)
-              if (i < 3) {
+              if (i < 5) {
                 console.log(`✅ PARSE: Accepted item ${i + 1} as valid nuclei result`)
               }
             } else {
-              if (i < 3) {
+              if (i < 5) {
                 console.log(`❌ PARSE: Rejected item ${i + 1} - doesn't match nuclei patterns`)
-                console.log(`❌ PARSE: Item keys:`, Object.keys(result))
+                console.log(`❌ PARSE: Item ${i + 1} keys:`, Object.keys(result))
               }
             }
           }
@@ -70,6 +84,7 @@ function parseNucleiResults(content: string): any[] {
       }
     } catch (e) {
       console.log(`⚠️ PARSE: Failed to parse as JSON array:`, e.message)
+      console.log(`⚠️ PARSE: First 200 chars: "${trimmedContent.substring(0, 200)}"`)
     }
   }
   
