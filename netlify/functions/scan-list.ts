@@ -2,7 +2,7 @@ import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
 import { getStore, connectLambda } from '@netlify/blobs'
 import { db, companies, tenants, scans } from '../../db'
-import { eq, and, inArray, desc } from 'drizzle-orm'
+import { eq, and, inArray, desc, sql } from 'drizzle-orm'
 
 const STORE_NAME = 'scans'
 
@@ -173,7 +173,19 @@ export const handler: Handler = async (event, context) => {
           })
           .from(scans)
           .where(eq(scans.tenantId, tenant.id))
-          .orderBy(desc(scans.processedAt), desc(scans.createdAt))
+          // Order by: completed first, then processing, then by processedAt desc, then createdAt desc
+          .orderBy(
+            // Priority: completed (1) > processing (2) > pending (3) > failed (4)
+            sql`CASE 
+              WHEN status = 'completed' THEN 1
+              WHEN status = 'processing' THEN 2  
+              WHEN status = 'pending' THEN 3
+              WHEN status = 'failed' THEN 4
+              ELSE 5
+            END`,
+            desc(scans.processedAt), 
+            desc(scans.createdAt)
+          )
 
         // Create scan status lookup map, taking only the most recent record for each filePath
         const scanStatusMap = new Map()
