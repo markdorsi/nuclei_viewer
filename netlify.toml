@@ -90,6 +90,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/t/:tenant/scans/reprocess"
+  to = "/.netlify/functions/scan-reprocess"
+  status = 200
+
+[[redirects]]
   from = "/api/t/:tenant/scans/associate"
   to = "/.netlify/functions/scan-associate"
   status = 200

@@ -160,6 +160,7 @@ export const handler: Handler = async (event, context) => {
     // Parse nuclei results
     const nucleiResults = parseNucleiResults(scanContent)
     console.log(`Parsed ${nucleiResults.length} nuclei results`)
+    console.log('🔍 PROCESS: Sample result:', nucleiResults.length > 0 ? JSON.stringify(nucleiResults[0], null, 2) : 'No results')
 
     if (nucleiResults.length === 0) {
       // Update scan status to completed (no findings)
@@ -265,48 +266,63 @@ export const handler: Handler = async (event, context) => {
         }[severity as keyof typeof slaTargetDays] || 120
 
         // Insert finding
-        await db
-          .insert(findings)
-          .values({
-            tenantId: tenant.id,
-            companyId: scanRecord?.companyId || null,
-            scanId: scanRecord?.id || null,
-            assetId,
-            dedupeKey,
-            templateId: result.info?.id || result.template,
-            templateName: result.info?.name || result.template,
-            severity,
-            name: result.info?.name || result.template || 'Unknown Finding',
-            description: result.info?.description,
-            matcher: result.matcher?.name,
-            extractedResults: result.extracted_results || result.extractedResults,
-            metadata: {
-              nuclei_info: result.info,
-              curl_command: result.curl_command,
-              matcher_status: result.matcher_status,
-              matched_at: result.matched_at
-            },
-            tags: result.info?.tags || [],
-            detectedAt,
-            slaTargetDays,
-            slaDueDate,
-            slaStatus: 'within',
-            currentStatus: 'detected'
-          })
-          .onConflictDoUpdate({
-            target: [findings.dedupeKey],
-            set: {
-              lastSeen: new Date(),
+        console.log(`🔍 PROCESS: Inserting finding - severity: ${severity}, template: ${result.info?.name || result.template}, target: ${target}`)
+        try {
+          await db
+            .insert(findings)
+            .values({
+              tenantId: tenant.id,
+              companyId: scanRecord?.companyId || null,
+              scanId: scanRecord?.id || null,
+              assetId,
+              dedupeKey,
+              templateId: result.info?.id || result.template,
+              templateName: result.info?.name || result.template,
+              severity,
+              name: result.info?.name || result.template || 'Unknown Finding',
+              description: result.info?.description,
+              matcher: result.matcher?.name,
+              extractedResults: result.extracted_results || result.extractedResults,
               metadata: {
                 nuclei_info: result.info,
                 curl_command: result.curl_command,
                 matcher_status: result.matcher_status,
                 matched_at: result.matched_at
+              },
+              tags: result.info?.tags || [],
+              detectedAt,
+              slaTargetDays,
+              slaDueDate,
+              slaStatus: 'within',
+              currentStatus: 'detected'
+            })
+            .onConflictDoUpdate({
+              target: [findings.dedupeKey],
+              set: {
+                lastSeen: new Date(),
+                metadata: {
+                  nuclei_info: result.info,
+                  curl_command: result.curl_command,
+                  matcher_status: result.matcher_status,
+                  matched_at: result.matched_at
+                }
               }
-            }
+            })
+          
+          findingsInserted++
+          console.log(`✅ PROCESS: Finding inserted successfully. Total findings: ${findingsInserted}`)
+        } catch (insertError) {
+          console.error('❌ PROCESS: Failed to insert finding:', insertError)
+          console.error('❌ PROCESS: Finding data:', {
+            tenantId: tenant.id,
+            companyId: scanRecord?.companyId,
+            scanId: scanRecord?.id,
+            assetId,
+            severity,
+            templateName: result.info?.name || result.template
           })
-
-        findingsInserted++
+          throw insertError
+        }
       } catch (error) {
         console.error('Error processing finding:', error)
         console.error('Result causing error:', JSON.stringify(result, null, 2))
