@@ -282,8 +282,22 @@ export const handler: Handler = async (event, context) => {
 
     // Parse nuclei results
     const nucleiResults = parseNucleiResults(scanContent)
-    console.log(`Parsed ${nucleiResults.length} nuclei results`)
-    console.log('🔍 PROCESS: Sample result:', nucleiResults.length > 0 ? JSON.stringify(nucleiResults[0], null, 2) : 'No results')
+    console.log(`🔍 PROCESS: Parsed ${nucleiResults.length} nuclei results`)
+    
+    // Log all parsed results for debugging
+    nucleiResults.forEach((result, i) => {
+      console.log(`🔍 PROCESS: Result ${i + 1}:`, {
+        templateId: result['template-id'] || result.templateId,
+        template: result.template,
+        host: result.host || result.target,
+        severity: result.info?.severity,
+        hasInfo: !!result.info,
+        hasHost: !!(result.host || result.target),
+        hasTemplateId: !!(result['template-id'] || result.templateId)
+      })
+    })
+    
+    console.log('🔍 PROCESS: Sample full result:', nucleiResults.length > 0 ? JSON.stringify(nucleiResults[0], null, 2) : 'No results')
 
     if (nucleiResults.length === 0) {
       // Update scan status to completed (no findings)
