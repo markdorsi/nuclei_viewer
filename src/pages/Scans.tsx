@@ -1,13 +1,14 @@
 import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { CloudArrowUpIcon, DocumentIcon, XCircleIcon } from "@heroicons/react/24/outline";
+import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon } from "@heroicons/react/24/outline";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB max
 const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
 
 export default function Scans() {
-  const { token, tenant } = useAuth();
+  const { tenant } = useAuth();
+  const token = localStorage.getItem('authToken');
   const queryClient = useQueryClient();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [scanName, setScanName] = useState("");
@@ -16,29 +17,52 @@ export default function Scans() {
   const [error, setError] = useState<string>("");
   const [currentChunk, setCurrentChunk] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
+  const [selectedScans, setSelectedScans] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isProcessingUpload, setIsProcessingUpload] = useState(false);
+  const [pollingAttempt, setPollingAttempt] = useState(0);
+  const [maxPollingAttempts, setMaxPollingAttempts] = useState(0);
   
   const uploadIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Query to list scans (keeping existing functionality)
+  console.log('🔒 Auth state - Token exists:', !!token, 'Tenant:', tenant?.slug)
+  
   const { data: scans, isLoading: isLoadingScans } = useQuery({
     queryKey: ['scans', tenant?.slug],
     queryFn: async () => {
       console.log('🔍 Fetching scans for tenant:', tenant?.slug)
-      const res = await fetch(`/api/t/${tenant?.slug}/scans/list`, {
+      const timestamp = new Date().getTime();
+      const url = `/api/t/${tenant?.slug}/scans/list?_t=${timestamp}`;
+      console.log('🌐 Request URL:', url)
+      
+      const res = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Cache-Control': 'no-cache'
         }
       })
+      
+      console.log('🌐 Response status:', res.status)
+      console.log('🌐 Response headers:', Object.fromEntries(res.headers.entries()))
+      
       if (!res.ok) {
-        throw new Error('Failed to fetch scans')
+        const errorText = await res.text()
+        console.error('🚨 API Error:', res.status, errorText)
+        throw new Error(`Failed to fetch scans: ${res.status}`)
       }
+      
       const data = await res.json()
       console.log('📄 Scans fetched:', data)
+      console.log('📊 Number of scans:', Array.isArray(data) ? data.length : 'Not array')
+      
       return data
     },
     enabled: !!token && !!tenant?.slug
   })
+  
+  console.log('📊 Query state - Loading:', isLoadingScans, 'Data count:', scans?.length)
 
   const calculateChunks = (fileSize: number, chunkSize: number) => {
     return Math.ceil(fileSize / chunkSize);
@@ -141,16 +165,61 @@ export default function Scans() {
       }
 
       setUploadStatus('complete');
+      const uploadedScanName = scanName || selectedFile?.name;
       setSelectedFile(null);
       setScanName("");
       uploadIdRef.current = null;
+      setIsProcessingUpload(true);
+      
       console.log('✅ Upload complete, invalidating cache for tenant:', tenant?.slug)
-      queryClient.invalidateQueries({ queryKey: ["scans", tenant?.slug] });
+      
+      // Polling mechanism to wait for scan to appear
+      let attempts = 0;
+      const maxAttempts = 12; // Poll for up to 2 minutes (12 * 10s)
+      setMaxPollingAttempts(maxAttempts);
+      
+      while (attempts < maxAttempts) {
+        attempts++;
+        setPollingAttempt(attempts);
+        console.log(`🔄 Polling attempt ${attempts}/${maxAttempts} for scan to appear`);
+        
+        // Wait before checking (exponential backoff)
+        const delay = Math.min(1000 + (attempts * 500), 5000); // 1s, 1.5s, 2s... max 5s
+        await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Force cache invalidation and refetch
+        await queryClient.invalidateQueries({ queryKey: ["scans", tenant?.slug] });
+        await queryClient.refetchQueries({ queryKey: ["scans", tenant?.slug] });
+        
+        // Check if our scan appeared
+        const currentScans = queryClient.getQueryData(["scans", tenant?.slug]) as any[];
+        const scanAppeared = currentScans?.some(scan => 
+          scan.key.includes(uploadedScanName?.split('.')[0]) || 
+          scan.key.includes(new Date().toISOString().split('T')[0])
+        );
+        
+        if (scanAppeared) {
+          console.log('✅ Scan appeared after', attempts, 'attempts');
+          break;
+        }
+        
+        if (attempts >= maxAttempts) {
+          console.log('⚠️ Scan did not appear after maximum polling attempts');
+          setError('Upload completed but scan is taking longer than expected to appear. Please refresh the page.');
+        }
+      }
+      
+      setIsProcessingUpload(false);
+      setPollingAttempt(0);
+      setMaxPollingAttempts(0);
       
     } catch (err: any) {
       console.error('Upload error:', err);
       setError(err.message || "Upload failed");
       setUploadStatus('error');
+      setIsProcessingUpload(false);
+      setPollingAttempt(0);
+      setMaxPollingAttempts(0);
       
       // Try to abort the upload session
       if (uploadIdRef.current) {
@@ -195,6 +264,73 @@ export default function Scans() {
     setCurrentChunk(0);
     setTotalChunks(0);
     uploadIdRef.current = null;
+  };
+
+  const deleteScans = async () => {
+    if (selectedScans.size === 0) return;
+    
+    const scanKeys = Array.from(selectedScans);
+    setIsDeleting(true);
+    setError("");
+    
+    try {
+      console.log('🗑️ Deleting scans:', scanKeys);
+      console.log('🔑 Token:', token ? 'present' : 'missing');
+      console.log('🏢 Tenant:', tenant?.slug);
+      
+      const response = await fetch(`/api/t/${tenant?.slug}/scans/delete`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ scanKeys })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete scans');
+      }
+
+      const result = await response.json();
+      console.log('Delete result:', result);
+      
+      // Clear selection and refresh the list
+      setSelectedScans(new Set());
+      
+      // Add a small delay to ensure the delete operation completes on the server
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Force a complete cache invalidation and refetch
+      await queryClient.invalidateQueries({ queryKey: ["scans", tenant?.slug] });
+      await queryClient.refetchQueries({ queryKey: ["scans", tenant?.slug] });
+      
+    } catch (err: any) {
+      console.error('Delete error:', err);
+      setError(err.message || "Failed to delete scans");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const toggleScanSelection = (scanKey: string) => {
+    const newSelection = new Set(selectedScans);
+    if (newSelection.has(scanKey)) {
+      newSelection.delete(scanKey);
+    } else {
+      newSelection.add(scanKey);
+    }
+    setSelectedScans(newSelection);
+  };
+
+  const selectAllScans = () => {
+    if (scans && scans.length > 0) {
+      setSelectedScans(new Set(scans.map((scan: any) => scan.key)));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedScans(new Set());
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -334,18 +470,35 @@ export default function Scans() {
           )}
 
           {/* Success Message */}
-          {uploadStatus === 'complete' && (
+          {uploadStatus === 'complete' && !isProcessingUpload && (
             <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
               <p className="text-sm text-green-800">Upload complete!</p>
             </div>
           )}
 
+          {/* Processing Message */}
+          {isProcessingUpload && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+              <div className="flex items-center">
+                <div className="animate-spin mr-2 h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                <div className="flex-1">
+                  <p className="text-sm text-blue-800">Processing upload and waiting for scan to appear...</p>
+                  {maxPollingAttempts > 0 && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      Checking attempt {pollingAttempt} of {maxPollingAttempts} (scans can take up to 2 minutes to appear)
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex gap-2">
-            {uploadStatus !== 'uploading' ? (
+            {uploadStatus !== 'uploading' && !isProcessingUpload ? (
               <button
                 onClick={startChunkedUpload}
-                disabled={!selectedFile || uploadStatus === 'uploading'}
+                disabled={!selectedFile || uploadStatus === 'uploading' || isProcessingUpload}
                 className="inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CloudArrowUpIcon className="-ml-1 mr-2 h-5 w-5" aria-hidden="true" />
@@ -366,8 +519,61 @@ export default function Scans() {
 
       {/* Scans List */}
       <div className="bg-white shadow sm:rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Uploaded Scans</h3>
+        <div className="px-4 py-5 sm:p-6 relative">
+          {/* Loading overlay during delete */}
+          {isDeleting && (
+            <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
+              <div className="text-center">
+                <div className="animate-spin mx-auto h-8 w-8 border-4 border-red-600 border-t-transparent rounded-full mb-2"></div>
+                <p className="text-sm text-gray-600">Deleting selected scans...</p>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-medium text-gray-900">Uploaded Scans</h3>
+            {scans && scans.length > 0 && (
+              <div className="flex items-center space-x-2">
+                {selectedScans.size > 0 && (
+                  <>
+                    <span className="text-sm text-gray-600">
+                      {selectedScans.size} selected
+                    </span>
+                    <button
+                      onClick={clearSelection}
+                      disabled={isDeleting}
+                      className="text-sm text-indigo-600 hover:text-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      onClick={deleteScans}
+                      disabled={isDeleting}
+                      className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isDeleting ? (
+                        <>
+                          <div className="animate-spin -ml-0.5 mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <TrashIcon className="-ml-0.5 mr-2 h-4 w-4" aria-hidden="true" />
+                          Delete Selected
+                        </>
+                      )}
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={selectAllScans}
+                  disabled={isDeleting}
+                  className="text-sm text-indigo-600 hover:text-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Select All
+                </button>
+              </div>
+            )}
+          </div>
           
           {isLoadingScans ? (
             <div className="text-center py-4">
@@ -380,6 +586,13 @@ export default function Scans() {
                 {scans.map((scan: any, index: number) => (
                   <li key={scan.key || index} className="py-3">
                     <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedScans.has(scan.key)}
+                        onChange={() => toggleScanSelection(scan.key)}
+                        disabled={isDeleting}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
                       <DocumentIcon className="h-6 w-6 text-gray-400" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">

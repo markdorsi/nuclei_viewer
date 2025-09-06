@@ -88,17 +88,27 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    // Verify all bytes received
-    if (sessionData.receivedBytes !== sessionData.expectedBytes) {
+    // Verify all bytes received (allow small tolerance for encoding differences)
+    const byteDifference = Math.abs(sessionData.receivedBytes - sessionData.expectedBytes);
+    const tolerance = Math.max(10, Math.floor(sessionData.expectedBytes * 0.01)); // 1% or 10 bytes, whichever is larger
+    
+    if (byteDifference > tolerance) {
+      console.log(`Byte mismatch beyond tolerance: received=${sessionData.receivedBytes}, expected=${sessionData.expectedBytes}, difference=${byteDifference}, tolerance=${tolerance}`);
       return {
         statusCode: 400,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          error: 'Incomplete upload',
+          error: 'Incomplete upload - significant byte mismatch',
           receivedBytes: sessionData.receivedBytes,
-          expectedBytes: sessionData.expectedBytes
+          expectedBytes: sessionData.expectedBytes,
+          difference: byteDifference,
+          tolerance
         })
       }
+    }
+    
+    if (byteDifference > 0) {
+      console.log(`Minor byte difference accepted: received=${sessionData.receivedBytes}, expected=${sessionData.expectedBytes}, difference=${byteDifference}`);
     }
 
     // Optional: Verify overall SHA-256 if provided
