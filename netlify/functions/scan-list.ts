@@ -2,7 +2,7 @@ import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
 import { getStore, connectLambda } from '@netlify/blobs'
 import { db, companies, tenants, scans } from '../../db'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, desc } from 'drizzle-orm'
 
 const STORE_NAME = 'scans'
 
@@ -162,24 +162,32 @@ export const handler: Handler = async (event, context) => {
         }
 
         // Lookup scan processing status for files with company associations
+        // Order by processedAt DESC to get the most recent status for each file
         const scanResults = await db
           .select({
             filePath: scans.filePath,
             status: scans.status,
             scanId: scans.id,
-            processedAt: scans.processedAt
+            processedAt: scans.processedAt,
+            createdAt: scans.createdAt
           })
           .from(scans)
           .where(eq(scans.tenantId, tenant.id))
+          .orderBy(desc(scans.processedAt), desc(scans.createdAt))
 
-        // Create scan status lookup map
+        // Create scan status lookup map, taking only the most recent record for each filePath
         const scanStatusMap = new Map()
         scanResults.forEach(scan => {
-          scanStatusMap.set(scan.filePath, {
-            status: scan.status,
-            scanId: scan.scanId,
-            processedAt: scan.processedAt
-          })
+          // Since results are ordered by processedAt DESC, createdAt DESC, 
+          // only set if we don't already have an entry for this filePath
+          if (!scanStatusMap.has(scan.filePath)) {
+            scanStatusMap.set(scan.filePath, {
+              status: scan.status,
+              scanId: scan.scanId,
+              processedAt: scan.processedAt
+            })
+            console.log(`📊 SCAN LIST: Taking most recent record for ${scan.filePath}: status=${scan.status}, processedAt=${scan.processedAt}`)
+          }
         })
 
         // Update items with processing status
