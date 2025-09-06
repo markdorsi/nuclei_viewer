@@ -109,35 +109,84 @@ export const handler: Handler = async (event, context) => {
 
     console.log('🟡 REPORTS: Found companies:', companiesList.length)
 
-    // Return simplified data for now
-    const emptyKPIs: KPIMetrics = {
-      timeToDetect: 0,
-      timeToTriage: 0,
-      timeToPrioritize: 0,
-      timeToRemediate: 0,
-      timeToValidate: 0,
-      timeToClose: 0,
-      slaHitRate: 0,
-      totalFindings: 0
+    // Calculate KPIs per company
+    const companyKPIs: CompanyKPIs[] = []
+
+    for (const company of companiesList) {
+      console.log('🟡 REPORTS: Processing company:', company.name)
+      
+      // Get findings for this company
+      const companyFindings = await db
+        .select({
+          id: findings.id,
+          severity: findings.severity,
+          detectedAt: findings.detectedAt,
+          triagedAt: findings.triagedAt,
+          prioritizedAt: findings.prioritizedAt,
+          remediatedAt: findings.remediatedAt,
+          validatedAt: findings.validatedAt,
+          closedAt: findings.closedAt,
+          slaTargetDays: findings.slaTargetDays,
+          slaDueDate: findings.slaDueDate,
+          slaStatus: findings.slaStatus,
+          currentStatus: findings.currentStatus
+        })
+        .from(findings)
+        .where(and(
+          eq(findings.tenantId, tenant.id),
+          eq(findings.companyId, company.id),
+          ...whereConditions.filter(cond => cond !== eq(findings.tenantId, tenant.id))
+        ))
+
+      console.log('🟡 REPORTS: Found findings for company:', companyFindings.length)
+
+      if (companyFindings.length === 0) continue
+
+      // Calculate KPIs
+      const kpis = calculateKPIs(companyFindings)
+      
+      companyKPIs.push({
+        companyId: company.id,
+        companyName: company.name,
+        companySlug: company.slug,
+        kpis
+      })
     }
 
-    const companyKPIs: CompanyKPIs[] = companiesList.map(company => ({
-      companyId: company.id,
-      companyName: company.name,
-      companySlug: company.slug,
-      kpis: emptyKPIs
-    }))
+    // Get overall tenant-level KPIs
+    console.log('🟡 REPORTS: Fetching all findings for tenant')
+    const allFindings = await db
+      .select({
+        id: findings.id,
+        severity: findings.severity,
+        detectedAt: findings.detectedAt,
+        triagedAt: findings.triagedAt,
+        prioritizedAt: findings.prioritizedAt,
+        remediatedAt: findings.remediatedAt,
+        validatedAt: findings.validatedAt,
+        closedAt: findings.closedAt,
+        slaTargetDays: findings.slaTargetDays,
+        slaDueDate: findings.slaDueDate,
+        slaStatus: findings.slaStatus,
+        currentStatus: findings.currentStatus
+      })
+      .from(findings)
+      .where(and(...whereConditions))
+
+    console.log('🟡 REPORTS: Total findings found:', allFindings.length)
+
+    const overallKPIs = calculateKPIs(allFindings)
 
     // Get simplified trend data
     const trendData = await getTrendData(tenant.id, companyId)
 
-    console.log('🟡 REPORTS: Returning simplified response')
+    console.log('🟡 REPORTS: Returning complete response with', overallKPIs.totalFindings, 'total findings')
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        overall: emptyKPIs,
+        overall: overallKPIs,
         companies: companyKPIs,
         trends: trendData,
         slaConfiguration: SLA_DAYS
