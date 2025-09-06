@@ -95,6 +95,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/t/:tenant/scans/debug"
+  to = "/.netlify/functions/debug-scan"
+  status = 200
+
+[[redirects]]
   from = "/api/t/:tenant/scans/associate"
   to = "/.netlify/functions/scan-associate"
   status = 200
