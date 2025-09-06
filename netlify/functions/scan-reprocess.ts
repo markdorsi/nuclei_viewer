@@ -73,6 +73,9 @@ export const handler: Handler = async (event, context) => {
     // Find the scan record - try multiple approaches
     let scanRecord = null
     
+    console.log(`🔄 REPROCESS: Looking for scan with scanKey: ${scanKey}`)
+    console.log(`🔄 REPROCESS: Tenant ID: ${tenant.id}`)
+    
     // First try to find by exact filePath match
     const [exactMatch] = await db
       .select()
@@ -85,10 +88,14 @@ export const handler: Handler = async (event, context) => {
     
     if (exactMatch) {
       scanRecord = exactMatch
+      console.log(`🔄 REPROCESS: Found scan by filePath: ID=${scanRecord.id}, status=${scanRecord.status}`)
     } else {
+      console.log(`🔄 REPROCESS: No exact filePath match found for: ${scanKey}`)
+      
       // If not found, try by fileName (extract from scanKey)
       const scanKeyParts = scanKey.split('/')
       const fileName = scanKeyParts[scanKeyParts.length - 1]
+      console.log(`🔄 REPROCESS: Trying fileName match: ${fileName}`)
       
       const [fileNameMatch] = await db
         .select()
@@ -99,8 +106,21 @@ export const handler: Handler = async (event, context) => {
         ))
         .limit(1)
       
-      scanRecord = fileNameMatch
+      if (fileNameMatch) {
+        scanRecord = fileNameMatch
+        console.log(`🔄 REPROCESS: Found scan by fileName: ID=${scanRecord.id}, status=${scanRecord.status}, filePath=${scanRecord.filePath}`)
+      } else {
+        console.log(`🔄 REPROCESS: No fileName match found either`)
+      }
     }
+    
+    // Show all scans for this tenant for debugging
+    const allScans = await db
+      .select({ id: scans.id, fileName: scans.fileName, filePath: scans.filePath, status: scans.status })
+      .from(scans)
+      .where(eq(scans.tenantId, tenant.id))
+    
+    console.log(`🔄 REPROCESS: All scans for tenant:`, allScans)
 
     if (!scanRecord) {
       console.log(`🔄 REPROCESS: Scan record not found for key: ${scanKey}`)
@@ -172,9 +192,35 @@ export const handler: Handler = async (event, context) => {
     const processResult = await processResponse.json()
     console.log('🔄 REPROCESS: Process result:', processResult)
 
+    // Verify the scan status was updated in the database
+    try {
+      const [updatedScan] = await db
+        .select({ status: scans.status, processedAt: scans.processedAt })
+        .from(scans)
+        .where(and(
+          eq(scans.tenantId, tenant.id),
+          eq(scans.filePath, scanKey)
+        ))
+        .limit(1)
+      
+      if (updatedScan) {
+        console.log('🔄 REPROCESS: Updated scan status in DB:', updatedScan.status)
+        console.log('🔄 REPROCESS: Processed at:', updatedScan.processedAt)
+      } else {
+        console.log('🔄 REPROCESS: ⚠️ Scan record not found in DB after processing')
+      }
+    } catch (dbError) {
+      console.error('🔄 REPROCESS: Error checking updated scan status:', dbError)
+    }
+
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      },
       body: JSON.stringify({
         message: 'Scan reprocessing triggered',
         scanKey,
