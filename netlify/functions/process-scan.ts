@@ -24,17 +24,44 @@ function parseNucleiResults(content: string): any[] {
   const results = []
   const lines = content.split('\n').filter(line => line.trim())
   
-  for (const line of lines) {
+  console.log(`🔍 PARSE: Processing ${lines.length} lines from scan file`)
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     try {
       const result = JSON.parse(line)
-      if (result && (result.info || result.template)) {
-        results.push(result)
+      
+      // Log the structure of the first few results for debugging
+      if (i < 3) {
+        console.log(`🔍 PARSE: Line ${i + 1} structure:`, JSON.stringify(result, null, 2))
+      }
+      
+      // More flexible parsing - accept any object that looks like a nuclei result
+      if (result && typeof result === 'object') {
+        // Check for various nuclei result patterns
+        const hasInfo = result.info && typeof result.info === 'object'
+        const hasTemplate = result.template && typeof result.template === 'string'
+        const hasTemplateId = result.template_id || result.templateId || result['template-id']
+        const hasHost = result.host || result.target
+        const hasMatched = result.matched_at || result.matchedAt
+        
+        if (hasInfo || hasTemplate || hasTemplateId || hasHost || hasMatched) {
+          results.push(result)
+          if (i < 3) {
+            console.log(`✅ PARSE: Accepted line ${i + 1} as valid nuclei result`)
+          }
+        } else {
+          if (i < 3) {
+            console.log(`❌ PARSE: Rejected line ${i + 1} - doesn't match nuclei patterns`)
+          }
+        }
       }
     } catch (e) {
-      console.log('Skipping invalid JSON line:', line.substring(0, 100))
+      console.log(`⚠️ PARSE: Skipping invalid JSON line ${i + 1}:`, line.substring(0, 200))
     }
   }
   
+  console.log(`🔍 PARSE: Found ${results.length} valid nuclei results out of ${lines.length} lines`)
   return results
 }
 
@@ -227,20 +254,30 @@ export const handler: Handler = async (event, context) => {
 
     for (const result of nucleiResults) {
       try {
-        // Extract target information
-        const target = result.host || result.target || 'unknown'
+        // Extract target information with more flexible parsing
+        const target = result.host || result.target || result.url || 'unknown'
         let hostname = target
         let ip = null
 
+        console.log(`🔍 PROCESS: Processing target: ${target}`)
+
         // Try to separate hostname and IP
         if (target.includes('://')) {
-          const url = new URL(target)
-          hostname = url.hostname
+          try {
+            const url = new URL(target)
+            hostname = url.hostname
+            console.log(`🔍 PROCESS: Extracted hostname from URL: ${hostname}`)
+          } catch (e) {
+            console.log(`⚠️ PROCESS: Failed to parse URL: ${target}`)
+            hostname = target
+          }
         } else if (/^\d+\.\d+\.\d+\.\d+$/.test(target)) {
           ip = target
           hostname = null
+          console.log(`🔍 PROCESS: Target is IP: ${ip}`)
         } else {
           hostname = target
+          console.log(`🔍 PROCESS: Target is hostname: ${hostname}`)
         }
 
         // Create or get asset
@@ -289,14 +326,16 @@ export const handler: Handler = async (event, context) => {
           assetId = processedAssets.get(assetKey) || null
         }
 
-        // Generate dedupe key
+        // Generate dedupe key using the extracted template name
         const dedupeKey = crypto
           .createHash('md5')
-          .update(`${tenantSlug}:${scanRecord?.companyId || 'unknown'}:${result.info?.name || result.template}:${target}`)
+          .update(`${tenantSlug}:${scanRecord?.companyId || 'unknown'}:${templateName}:${target}`)
           .digest('hex')
 
-        // Extract finding information
-        const severity = result.info?.severity || 'info'
+        // Extract finding information with flexible field mapping
+        const severity = result.info?.severity || result.severity || 'info'
+        const templateId = result.info?.id || result.template_id || result.templateId || result['template-id'] || result.template || 'unknown'
+        const templateName = result.info?.name || result.template_name || result.templateName || result['template-name'] || templateId
         const detectedAt = new Date()
         const slaDueDate = generateSlaDueDate(severity, detectedAt)
         const slaTargetDays = {
@@ -307,8 +346,10 @@ export const handler: Handler = async (event, context) => {
           info: 120
         }[severity as keyof typeof slaTargetDays] || 120
 
+        console.log(`🔍 PROCESS: Found - severity: ${severity}, template: ${templateName}, templateId: ${templateId}`)
+
         // Insert finding
-        console.log(`🔍 PROCESS: Inserting finding - severity: ${severity}, template: ${result.info?.name || result.template}, target: ${target}`)
+        console.log(`🔍 PROCESS: Inserting finding - severity: ${severity}, template: ${templateName}, target: ${target}`)
         try {
           await db
             .insert(findings)
@@ -318,20 +359,21 @@ export const handler: Handler = async (event, context) => {
               scanId: scanRecord?.id || null,
               assetId,
               dedupeKey,
-              templateId: result.info?.id || result.template,
-              templateName: result.info?.name || result.template,
+              templateId,
+              templateName,
               severity,
-              name: result.info?.name || result.template || 'Unknown Finding',
-              description: result.info?.description,
-              matcher: result.matcher?.name,
-              extractedResults: result.extracted_results || result.extractedResults,
+              name: templateName || 'Unknown Finding',
+              description: result.info?.description || result.description,
+              matcher: result.matcher?.name || result.matcher,
+              extractedResults: result.extracted_results || result.extractedResults || result.extracted,
               metadata: {
                 nuclei_info: result.info,
                 curl_command: result.curl_command,
                 matcher_status: result.matcher_status,
-                matched_at: result.matched_at
+                matched_at: result.matched_at,
+                raw_result: result
               },
-              tags: result.info?.tags || [],
+              tags: result.info?.tags || result.tags || [],
               detectedAt,
               slaTargetDays,
               slaDueDate,
