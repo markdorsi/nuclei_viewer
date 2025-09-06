@@ -217,27 +217,44 @@ export const handler: Handler = async (event, context) => {
               .set({ status: 'processing' })
               .where(eq(scans.id, scanId))
 
-            // Trigger automatic processing (fire-and-forget)
-            // Construct the full URL for internal function call
+            // Trigger automatic processing with better error handling
             const baseUrl = process.env.URL || `https://${process.env.SITE_NAME || 'scanvault'}.netlify.app`
             const processUrl = `${baseUrl}/api/t/${sessionData.tenantSlug}/scans/process`
             
-            fetch(processUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                scanId
+            console.log(`🚀 Triggering automatic processing: ${processUrl}`)
+            
+            try {
+              const processResponse = await fetch(processUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  scanId
+                }),
+                signal: AbortSignal.timeout(30000) // 30 second timeout
               })
-            }).catch(error => {
-              console.error('Failed to trigger scan processing:', error)
+
+              if (processResponse.ok) {
+                const processResult = await processResponse.json()
+                console.log(`✅ Automatic processing triggered successfully:`, processResult)
+              } else {
+                const errorText = await processResponse.text()
+                console.error(`❌ Processing trigger failed with status ${processResponse.status}:`, errorText)
+                
+                // Update scan status to failed
+                await db.update(scans)
+                  .set({ status: 'failed' })
+                  .where(eq(scans.id, scanId))
+              }
+            } catch (error) {
+              console.error('❌ Failed to trigger scan processing:', error)
+              
               // Update scan status to failed
-              db.update(scans)
+              await db.update(scans)
                 .set({ status: 'failed' })
                 .where(eq(scans.id, scanId))
-                .catch(console.error)
-            })
+            }
 
             console.log(`🚀 Triggered automatic processing for scan: ${scanId}`)
           } else {
