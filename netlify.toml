@@ -80,6 +80,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/t/:tenant/scans/delete"
+  to = "/.netlify/functions/scan-delete"
+  status = 200
+
+[[redirects]]
   from = "/api/t/:tenant/:function"
   to = "/.netlify/functions/:function?tenant=:tenant"
   status = 200

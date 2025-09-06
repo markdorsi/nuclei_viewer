@@ -66,10 +66,15 @@ export const handler: Handler = async (event, context) => {
 
     // List blobs with tenant isolation
     const store = getStore(STORE_NAME)
+    console.log('About to list blobs from store:', STORE_NAME)
+    
     const { blobs } = await store.list({ 
       prefix,
       limit: 200 
     })
+    
+    console.log('Found blobs:', blobs.length)
+    console.log('Blob keys:', blobs.map(b => b.key))
 
     // Get metadata store to retrieve size and upload time
     const metaStore = getStore('scans-meta')
@@ -80,8 +85,13 @@ export const handler: Handler = async (event, context) => {
       try {
         // Try to get metadata for this scan
         const metadataKey = `records/${tenantSlug}/${blob.key}.json`
+        console.log(`Looking for metadata: ${metadataKey}`)
         const metadataText = await metaStore.get(metadataKey)
+        console.log(`Metadata found: ${!!metadataText}`)
         const metadata = metadataText ? JSON.parse(metadataText) : null
+        if (metadata) {
+          console.log(`Metadata parsed:`, { size: metadata.size, completedAt: metadata.completedAt })
+        }
         
         items.push({
           key: blob.key,
