@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon, BuildingOfficeIcon, ChevronDownIcon, PlusIcon } from "@heroicons/react/24/outline";
+import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon, BuildingOfficeIcon, ChevronDownIcon, PlusIcon, CogIcon, CheckCircleIcon, ClockIcon } from "@heroicons/react/24/outline";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB max
 const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
@@ -66,7 +66,14 @@ export default function Scans() {
       
       return data
     },
-    enabled: !!token && !!tenant?.slug
+    enabled: !!token && !!tenant?.slug,
+    refetchInterval: (data) => {
+      // Auto-refresh every 5 seconds if there are processing scans
+      const hasProcessingScans = data?.some((scan: any) => 
+        scan.processingStatus === 'processing' || scan.processingStatus === 'pending'
+      )
+      return hasProcessingScans ? 5000 : false
+    }
   })
 
   const { data: companies } = useQuery({
@@ -477,6 +484,48 @@ export default function Scans() {
     return new Date(dateString).toLocaleString()
   }
 
+  const renderProcessingStatus = (scan: any) => {
+    const status = scan.processingStatus
+
+    if (!status || !scan.companyId) {
+      // No company association - no processing expected
+      return null
+    }
+
+    switch (status) {
+      case 'pending':
+        return (
+          <div className="inline-flex items-center space-x-1 text-xs text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full">
+            <ClockIcon className="h-3 w-3" />
+            <span>Pending Processing</span>
+          </div>
+        )
+      case 'processing':
+        return (
+          <div className="inline-flex items-center space-x-1 text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+            <CogIcon className="h-3 w-3 animate-spin" />
+            <span>Processing...</span>
+          </div>
+        )
+      case 'completed':
+        return (
+          <div className="inline-flex items-center space-x-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+            <CheckCircleIcon className="h-3 w-3" />
+            <span>Processed</span>
+          </div>
+        )
+      case 'failed':
+        return (
+          <div className="inline-flex items-center space-x-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full">
+            <ExclamationTriangleIcon className="h-3 w-3" />
+            <span>Processing Failed</span>
+          </div>
+        )
+      default:
+        return null
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto">
       <div className="mb-8">
@@ -801,6 +850,7 @@ export default function Scans() {
                                 <p className={`text-sm ${isBeingDeleted ? 'text-red-400' : 'text-gray-500'}`}>
                                   {formatFileSize(scan.size)} • {formatDate(scan.uploadedAt)}
                                 </p>
+                                {!isBeingDeleted && renderProcessingStatus(scan)}
                                 {!isBeingDeleted && (
                                   <div className="relative">
                                     <button

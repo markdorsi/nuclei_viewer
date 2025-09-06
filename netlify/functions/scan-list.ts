@@ -1,7 +1,7 @@
 import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
 import { getStore, connectLambda } from '@netlify/blobs'
-import { db, companies, tenants } from '../../db'
+import { db, companies, tenants, scans } from '../../db'
 import { eq, and, inArray } from 'drizzle-orm'
 
 const STORE_NAME = 'scans'
@@ -124,17 +124,21 @@ export const handler: Handler = async (event, context) => {
       }
     }
 
-    // Batch lookup company names from database if needed
-    if (companyIds.size > 0) {
-      try {
-        // Get tenant from database
-        const [tenant] = await db
-          .select()
-          .from(tenants)
-          .where(eq(tenants.slug, tenantSlug))
-          .limit(1)
+    // Batch lookup company names and scan status from database
+    let tenant = null
+    try {
+      // Get tenant from database
+      const [tenantResult] = await db
+        .select()
+        .from(tenants)
+        .where(eq(tenants.slug, tenantSlug))
+        .limit(1)
+      
+      tenant = tenantResult
 
-        if (tenant) {
+      if (tenant) {
+        // Lookup company names if needed
+        if (companyIds.size > 0) {
           const companyResults = await db
             .select()
             .from(companies)
@@ -156,10 +160,47 @@ export const handler: Handler = async (event, context) => {
             }
           })
         }
-      } catch (dbErr) {
-        console.error('Error fetching company names:', dbErr)
-        // Continue without company names - they'll remain null
+
+        // Lookup scan processing status for files with company associations
+        const scanResults = await db
+          .select({
+            filePath: scans.filePath,
+            status: scans.status,
+            scanId: scans.id,
+            processedAt: scans.processedAt
+          })
+          .from(scans)
+          .where(eq(scans.tenantId, tenant.id))
+
+        // Create scan status lookup map
+        const scanStatusMap = new Map()
+        scanResults.forEach(scan => {
+          scanStatusMap.set(scan.filePath, {
+            status: scan.status,
+            scanId: scan.scanId,
+            processedAt: scan.processedAt
+          })
+        })
+
+        // Update items with processing status
+        items.forEach(item => {
+          if (scanStatusMap.has(item.key)) {
+            const scanInfo = scanStatusMap.get(item.key)
+            item.processingStatus = scanInfo.status
+            item.scanId = scanInfo.scanId
+            item.processedAt = scanInfo.processedAt
+          } else if (item.companyId) {
+            // If scan has company but no DB record, it means processing hasn't started
+            item.processingStatus = 'pending'
+          } else {
+            // No company association - no processing expected
+            item.processingStatus = null
+          }
+        })
       }
+    } catch (dbErr) {
+      console.error('Error fetching database info:', dbErr)
+      // Continue without database info - they'll remain null
     }
 
     console.log(`Found ${items.length} scans`)
