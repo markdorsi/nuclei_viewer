@@ -1,6 +1,8 @@
 import type { Handler } from '@netlify/functions'
 import jwt from 'jsonwebtoken'
 import { getStore, connectLambda } from '@netlify/blobs'
+import { db, companies, tenants } from '../../db'
+import { eq, and, inArray } from 'drizzle-orm'
 
 const STORE_NAME = 'scans'
 
@@ -81,6 +83,8 @@ export const handler: Handler = async (event, context) => {
     
     // Transform to expected format with metadata lookup
     const items = []
+    const companyIds = new Set<string>()
+    
     for (const blob of blobs) {
       try {
         // Try to get metadata for this scan
@@ -93,13 +97,20 @@ export const handler: Handler = async (event, context) => {
           console.log(`Metadata parsed:`, { size: metadata.size, completedAt: metadata.completedAt })
         }
         
-        items.push({
+        const item = {
           key: blob.key,
           size: metadata?.size || 0,
           uploadedAt: metadata?.completedAt || new Date().toISOString(),
           companyId: metadata?.companyId || null,
           companyName: metadata?.companyName || null
-        })
+        }
+        
+        items.push(item)
+        
+        // Track company IDs for batch lookup
+        if (item.companyId) {
+          companyIds.add(item.companyId)
+        }
       } catch (err) {
         console.error(`Error getting metadata for ${blob.key}:`, err)
         // Fallback without metadata
@@ -110,6 +121,44 @@ export const handler: Handler = async (event, context) => {
           companyId: null,
           companyName: null
         })
+      }
+    }
+
+    // Batch lookup company names from database if needed
+    if (companyIds.size > 0) {
+      try {
+        // Get tenant from database
+        const [tenant] = await db
+          .select()
+          .from(tenants)
+          .where(eq(tenants.slug, tenantSlug))
+          .limit(1)
+
+        if (tenant) {
+          const companyResults = await db
+            .select()
+            .from(companies)
+            .where(and(
+              eq(companies.tenantId, tenant.id),
+              inArray(companies.id, Array.from(companyIds))
+            ))
+
+          // Create lookup map
+          const companyMap = new Map()
+          companyResults.forEach(company => {
+            companyMap.set(company.id, company.name)
+          })
+
+          // Update items with company names
+          items.forEach(item => {
+            if (item.companyId && companyMap.has(item.companyId)) {
+              item.companyName = companyMap.get(item.companyId)
+            }
+          })
+        }
+      } catch (dbErr) {
+        console.error('Error fetching company names:', dbErr)
+        // Continue without company names - they'll remain null
       }
     }
 
