@@ -81,20 +81,6 @@ export const handler: Handler = async (event, context) => {
 
   try {
     console.log('🟡 REPORTS: Starting reports generation for tenant:', tenantSlug)
-    
-    // Build the base query
-    let whereConditions = [eq(findings.tenantId, tenant.id)]
-    
-    if (startDate) {
-      whereConditions.push(gte(findings.detectedAt, new Date(startDate)))
-    }
-    if (endDate) {
-      whereConditions.push(lte(findings.detectedAt, new Date(endDate)))
-    }
-    if (companyId) {
-      whereConditions.push(eq(findings.companyId, companyId))
-    }
-
     console.log('🟡 REPORTS: Fetching companies for tenant:', tenant.id)
     
     // Get all companies for this tenant
@@ -135,7 +121,8 @@ export const handler: Handler = async (event, context) => {
         .where(and(
           eq(findings.tenantId, tenant.id),
           eq(findings.companyId, company.id),
-          ...whereConditions.filter(cond => cond !== eq(findings.tenantId, tenant.id))
+          ...(startDate ? [gte(findings.detectedAt, new Date(startDate))] : []),
+          ...(endDate ? [lte(findings.detectedAt, new Date(endDate))] : [])
         ))
 
       console.log('🟡 REPORTS: Found findings for company:', companyFindings.length)
@@ -171,7 +158,12 @@ export const handler: Handler = async (event, context) => {
         currentStatus: findings.currentStatus
       })
       .from(findings)
-      .where(and(...whereConditions))
+      .where(and(
+        eq(findings.tenantId, tenant.id),
+        ...(startDate ? [gte(findings.detectedAt, new Date(startDate))] : []),
+        ...(endDate ? [lte(findings.detectedAt, new Date(endDate))] : []),
+        ...(companyId ? [eq(findings.companyId, companyId)] : [])
+      ))
 
     console.log('🟡 REPORTS: Total findings found:', allFindings.length)
 
