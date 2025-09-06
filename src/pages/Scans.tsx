@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
-import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon, BuildingOfficeIcon, ChevronDownIcon, PlusIcon, CogIcon, CheckCircleIcon, ClockIcon } from "@heroicons/react/24/outline";
+import { CloudArrowUpIcon, DocumentIcon, XCircleIcon, TrashIcon, ExclamationTriangleIcon, BuildingOfficeIcon, ChevronDownIcon, PlusIcon, CogIcon, CheckCircleIcon, ClockIcon, ArrowPathIcon } from "@heroicons/react/24/outline";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB max
 const DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
@@ -32,6 +32,35 @@ export default function Scans() {
   
   const uploadIdRef = useRef<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Reprocess mutation
+  const reprocessMutation = useMutation({
+    mutationFn: async (scanKey: string) => {
+      console.log('🔄 Reprocessing scan:', scanKey);
+      
+      const response = await fetch(`/api/t/${tenant?.slug}/scans/reprocess`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ scanKey })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to reprocess scan');
+      }
+
+      const result = await response.json();
+      console.log('Reprocess result:', result);
+      return result;
+    },
+    onSuccess: () => {
+      // Refresh scans list to show updated processing status
+      queryClient.invalidateQueries({ queryKey: ["scans", tenant?.slug] });
+    }
+  });
 
   // Query to list scans (keeping existing functionality)
   console.log('🔒 Auth state - Token exists:', !!token, 'Tenant:', tenant?.slug)
@@ -854,6 +883,17 @@ export default function Scans() {
                                   {formatFileSize(scan.size)} • {formatDate(scan.uploadedAt)}
                                 </p>
                                 {!isBeingDeleted && renderProcessingStatus(scan)}
+                                {!isBeingDeleted && scan.processingStatus === 'completed' && scan.companyId && (
+                                  <button
+                                    onClick={() => reprocessMutation.mutate(scan.key)}
+                                    disabled={reprocessMutation.isPending}
+                                    className="inline-flex items-center space-x-1 text-xs text-orange-600 hover:text-orange-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 rounded disabled:opacity-50"
+                                    title="Reprocess this scan to regenerate findings"
+                                  >
+                                    <ArrowPathIcon className={`h-3 w-3 ${reprocessMutation.isPending ? 'animate-spin' : ''}`} />
+                                    <span>Reprocess</span>
+                                  </button>
+                                )}
                                 {!isBeingDeleted && (
                                   <div className="relative">
                                     <button
